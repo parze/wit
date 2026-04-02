@@ -380,19 +380,25 @@ export default function CourseEditorPage() {
                 >i</button>
               </div>
               <p className="text-sm text-gray-400 mb-3">Upplev kursen som en elev – samma vy, samma AI.</p>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <button
-                  onClick={() => navigate(`/teacher/courses/${id}/test-chat`)}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                  onClick={() => navigate(`/teacher/courses/${id}/test-chat?mode=learn`)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
                 >
-                  Testa chat →
+                  Lär mig
+                </button>
+                <button
+                  onClick={() => navigate(`/teacher/courses/${id}/test-chat?mode=quiz`)}
+                  className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
+                >
+                  Quiza mig
                 </button>
                 <button
                   onClick={clearTestSession}
                   disabled={clearingSession}
                   className="bg-gray-100 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 transition-colors"
                 >
-                  {clearingSession ? 'Rensar...' : 'Starta ny chatt'}
+                  {clearingSession ? 'Rensar...' : 'Börja om'}
                 </button>
               </div>
             </div>

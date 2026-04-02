@@ -82,7 +82,7 @@ export default function SectionPage() {
     setMessages(m => [...m, { role: 'assistant', content: '' }]);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`http://49.12.195.247:5210/api/chat/${id}`, {
+      const res = await fetch(`/api/chat/${id}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

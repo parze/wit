@@ -12,7 +12,7 @@ export default function InstructionsPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [isNew, setIsNew] = useState(false);
-  const [form, setForm] = useState({ title: '', compile_prompt: '', chat_prompt: '' });
+  const [form, setForm] = useState({ title: '', compile_prompt: '', chat_prompt: '', quiz_prompt: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -30,14 +30,14 @@ export default function InstructionsPage() {
   };
 
   const openNew = () => {
-    setForm({ title: '', compile_prompt: '', chat_prompt: '' });
+    setForm({ title: '', compile_prompt: '', chat_prompt: '', quiz_prompt: '' });
     setSelected(null);
     setIsNew(true);
     setError('');
   };
 
   const openEdit = (instruction) => {
-    setForm({ title: instruction.title, compile_prompt: instruction.compile_prompt || '', chat_prompt: instruction.chat_prompt || '' });
+    setForm({ title: instruction.title, compile_prompt: instruction.compile_prompt || '', chat_prompt: instruction.chat_prompt || '', quiz_prompt: instruction.quiz_prompt || '' });
     setSelected(instruction);
     setIsNew(false);
     setError('');
@@ -133,6 +133,19 @@ export default function InstructionsPage() {
                 value={form.chat_prompt}
                 onChange={e => setForm(f => ({ ...f, chat_prompt: e.target.value }))}
                 rows={10}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Prompt för quiz-prov
+                <span className="ml-2 font-normal text-gray-400 text-xs">— används när eleven väljer "Quiza mig" (en fråga per Moment, poäng 0–1)</span>
+              </label>
+              <textarea
+                value={form.quiz_prompt}
+                onChange={e => setForm(f => ({ ...f, quiz_prompt: e.target.value }))}
+                rows={8}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
               />
             </div>

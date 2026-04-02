@@ -82,8 +82,11 @@ router.get('/courses/:id', authMiddleware, requireRole('student'), async (req, r
       questions,
       status: progress ? progress.status : 'not_started',
       messages: chatSession ? chatSession.messages : [],
+      quizMessages: chatSession ? (chatSession.quiz_messages || []) : [],
       quizResult: quizResult || null,
       aiSummary: aiSummary || null,
+      quizAnsweredSections: aiSummary?.quiz_answered_sections || [],
+      quizScore: aiSummary?.quiz_score ?? null,
       stars: parseInt(starsCount?.count ?? 0),
     });
   } catch (err) {

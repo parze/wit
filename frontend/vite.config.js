@@ -7,5 +7,13 @@ export default defineConfig({
   server: {
     port: 5200,
     host: '0.0.0.0',
+    allowedHosts: ['wit.just-bake.it'],
+    proxy: {
+      '/api': 'http://49.12.195.247:5210',
+      '/socket.io': {
+        target: 'http://49.12.195.247:5210',
+        ws: true,
+      },
+    },
   },
 })

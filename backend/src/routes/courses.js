@@ -261,9 +261,50 @@ router.delete('/:id/test-session', authMiddleware, requireRole('teacher'), async
     const course = await db('courses').where({ id, teacher_id: req.user.id }).first();
     if (!course) return res.status(404).json({ error: 'Course not found' });
     await db('chat_sessions').where({ student_id: req.user.id, course_id: id }).delete();
+    await db('ai_summaries').where({ student_id: req.user.id, course_id: id }).delete();
     res.json({ ok: true });
   } catch (err) {
     console.error('Clear test session error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/courses/:id/quiz-session – fetch teacher's quiz session
+router.get('/:id/quiz-session', authMiddleware, requireRole('teacher'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const course = await db('courses').where({ id, teacher_id: req.user.id }).first();
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+    const [session, aiSummary] = await Promise.all([
+      db('chat_sessions').where({ student_id: req.user.id, course_id: id }).first(),
+      db('ai_summaries').where({ student_id: req.user.id, course_id: id }).first(),
+    ]);
+    res.json({
+      quizMessages: session?.quiz_messages || [],
+      quizAnsweredSections: aiSummary?.quiz_answered_sections || [],
+      quizScore: aiSummary?.quiz_score ?? null,
+    });
+  } catch (err) {
+    console.error('Get quiz session error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/courses/:id/quiz-session – clear teacher's quiz session
+router.delete('/:id/quiz-session', authMiddleware, requireRole('teacher'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const course = await db('courses').where({ id, teacher_id: req.user.id }).first();
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+    await db('chat_sessions')
+      .where({ student_id: req.user.id, course_id: id })
+      .update({ quiz_messages: JSON.stringify([]) });
+    await db('ai_summaries')
+      .where({ student_id: req.user.id, course_id: id })
+      .update({ quiz_score: null, quiz_answered_sections: JSON.stringify([]) });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Clear quiz session error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -6,7 +6,7 @@ let socket = null;
 export function getSocket() {
   if (!socket) {
     const user = getUser();
-    socket = io('http://49.12.195.247:5210', {
+    socket = io(window.location.origin, {
       query: { studentId: user?.id },
       transports: ['websocket'],
     });
