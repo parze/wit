@@ -18,6 +18,7 @@ const instructionsRoutes = require('./src/routes/instructions');
 
 const http = require('http');
 const { Server } = require('socket.io');
+const { registerTTSHandlers } = require('./src/tts');
 
 const app = express();
 const server = http.createServer(app);
@@ -26,6 +27,7 @@ const io = new Server(server, { cors: { origin: '*' } });
 io.on('connection', socket => {
   const { studentId } = socket.handshake.query;
   if (studentId) socket.join(`student:${studentId}`);
+  registerTTSHandlers(io, socket);
 });
 
 app.set('io', io);

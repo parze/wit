@@ -11,6 +11,7 @@ import StudentsPage from './pages/teacher/StudentsPage';
 import ClassesPage from './pages/teacher/ClassesPage';
 import InstructionsPage from './pages/teacher/InstructionsPage';
 import TestChatPage from './pages/teacher/TestChatPage';
+import TeachMePage from './pages/teacher/TeachMePage';
 import StudentCoursesPage from './pages/student/StudentCoursesPage';
 import CoursePage from './pages/student/CoursePage';
 import CourseQuizPage from './pages/student/CourseQuizPage';
@@ -48,6 +49,9 @@ export default function App() {
         } />
         <Route path="/teacher/courses/:id/test-chat" element={
           <PrivateRoute role="teacher"><TestChatPage /></PrivateRoute>
+        } />
+        <Route path="/teacher/courses/:id/teach" element={
+          <PrivateRoute role="teacher"><TeachMePage /></PrivateRoute>
         } />
         <Route path="/teacher/students" element={
           <PrivateRoute role="teacher"><StudentsPage /></PrivateRoute>

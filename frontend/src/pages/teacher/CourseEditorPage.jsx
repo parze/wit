@@ -392,6 +392,13 @@ export default function CourseEditorPage() {
                   Förhör mig
                 </button>
                 <button
+                  onClick={() => navigate(`/teacher/courses/${id}/teach`)}
+                  disabled={!compiledMaterial}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+                >
+                  Undervisa mig
+                </button>
+                <button
                   onClick={clearTestSession}
                   disabled={clearingSession}
                   className="bg-gray-100 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 transition-colors"
