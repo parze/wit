@@ -1,52 +1,21 @@
+'use strict';
+
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const db = require('../db');
-const { authMiddleware, requireRole } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 const logger = require('../logger');
+const {
+  setSSEHeaders,
+  streamWithMarkerAndTTS,
+  upsertAiSummary,
+  upsertChatSession,
+  getMomentContent,
+  generateQuickReplies,
+} = require('./chatHelpers');
 
 const router = express.Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'kpTdKfohzvarfFPnwuHW';
-
-function stripMarkdown(text) {
-  return text
-    .replace(/#{1,6}\s+/g, '')
-    .replace(/\*{1,2}([^*\n]+)\*{1,2}/g, '$1')
-    .replace(/`[^`]+`/g, '')
-    .replace(/^\s*[-*+]\s+/gm, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/\n+/g, ' ')
-    .trim();
-}
-
-async function emitChatTTS(io, studentId, text, seq) {
-  const API_KEY = process.env.ELEVENLABS_API_KEY;
-  if (!API_KEY) { io.to(`student:${studentId}`).emit('chat_tts_skip', { seq }); return; }
-  const plain = stripMarkdown(text);
-  if (!plain || plain.length < 4) { io.to(`student:${studentId}`).emit('chat_tts_skip', { seq }); return; }
-  try {
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}/stream`,
-      {
-        method: 'POST',
-        headers: { 'xi-api-key': API_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: plain,
-          model_id: 'eleven_multilingual_v2',
-          voice_settings: { stability: 0.5, similarity_boost: 0.8 },
-        }),
-      }
-    );
-    if (!response.ok) { io.to(`student:${studentId}`).emit('chat_tts_skip', { seq }); return; }
-    const chunks = [];
-    for await (const chunk of response.body) chunks.push(chunk);
-    const audioB64 = Buffer.concat(chunks).toString('base64');
-    io.to(`student:${studentId}`).emit('chat_tts_chunk', { audioB64, seq });
-  } catch {
-    io.to(`student:${studentId}`).emit('chat_tts_skip', { seq });
-  }
-}
 
 // POST /api/chat/:courseId  (students enrolled in the course, or the teacher who owns it)
 router.post('/:courseId', authMiddleware, async (req, res) => {
@@ -70,7 +39,6 @@ router.post('/:courseId', authMiddleware, async (req, res) => {
     }
 
     if (isTeacher) {
-      // Teachers may only test their own courses
       if (course.teacher_id !== req.user.id) {
         return res.status(403).json({ error: 'Not your course' });
       }
@@ -171,24 +139,13 @@ Regler:
           ]
         : trimmedMsgs;
 
-      // SSE headers
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
+      setSSEHeaders(res);
 
       const io = req.app.get('io');
       const studentId = req.user.id;
 
-      // Buffer long enough for both markers ([MOMENT_SLUT:0.00] = 16 chars)
       const QUIZ_MARKER_RE = /\[QUIZ_POÄNG:([\d.]+)\]/;
       const MOMENT_SLUT_RE = /\[MOMENT_SLUT:([\d.]+)\]/;
-      const MARKER_BUF_LEN = 20;
-      let quizAssistantMsg = '';
-      let quizStreamBuf = '';
-      let ttsQuizBuf = '';
-      let ttsQuizSeq = 0;
-      const quizSentRe = /^([\s\S]*?[.!?])(\s+)/;
 
       logger.info({ msgs: sonnetMsgs }, '[forhör:sent]');
 
@@ -199,27 +156,16 @@ Regler:
         messages: sonnetMsgs,
       });
 
-      for await (const chunk of quizStream) {
-        if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-          quizAssistantMsg += chunk.delta.text;
-          quizStreamBuf += chunk.delta.text;
-          ttsQuizBuf += chunk.delta.text;
-          if (quizStreamBuf.length > MARKER_BUF_LEN) {
-            res.write(`data: ${JSON.stringify({ text: quizStreamBuf.slice(0, -MARKER_BUF_LEN) })}\n\n`);
-            quizStreamBuf = quizStreamBuf.slice(-MARKER_BUF_LEN);
-          }
-          let quizSentMatch;
-          while ((quizSentMatch = quizSentRe.exec(ttsQuizBuf)) !== null) {
-            const sentence = quizSentMatch[1];
-            ttsQuizBuf = ttsQuizBuf.slice(quizSentMatch[0].length);
-            emitChatTTS(io, studentId, sentence, ttsQuizSeq++).catch(() => {});
-          }
-        }
-      }
-      const quizRemainder = quizStreamBuf.replace(QUIZ_MARKER_RE, '').replace(MOMENT_SLUT_RE, '').trimEnd();
-      if (quizRemainder) res.write(`data: ${JSON.stringify({ text: quizRemainder })}\n\n`);
-      const ttsQuizRemainder = ttsQuizBuf.replace(QUIZ_MARKER_RE, '').replace(MOMENT_SLUT_RE, '').trim();
-      if (ttsQuizRemainder) emitChatTTS(io, studentId, ttsQuizRemainder, ttsQuizSeq++).catch(() => {});
+      const { fullText: quizAssistantMsg } = await streamWithMarkerAndTTS({
+        stream: quizStream,
+        res,
+        io,
+        studentId,
+        markerBufLen: 20,
+        stripRe: [QUIZ_MARKER_RE, MOMENT_SLUT_RE],
+        startSeq: 0,
+        label: 'förhör',
+      });
       io.to(`student:${studentId}`).emit('chat_tts_done');
 
       logger.info({ msg: quizAssistantMsg }, '[forhör:received]');
@@ -239,18 +185,7 @@ Regler:
       }
 
       // Save quiz_messages
-      if (existingSession) {
-        await db('chat_sessions')
-          .where({ student_id: req.user.id, course_id: courseId })
-          .update({ quiz_messages: JSON.stringify(msgs), updated_at: db.fn.now() });
-      } else {
-        await db('chat_sessions').insert({
-          student_id: req.user.id,
-          course_id: courseId,
-          messages: JSON.stringify([]),
-          quiz_messages: JSON.stringify(msgs),
-        });
-      }
+      await upsertChatSession(db, req.user.id, courseId, 'quiz_messages', msgs, existingSession, { messages: JSON.stringify([]) });
       lap('db: save quiz_session');
 
       res.write(`data: ${JSON.stringify({ done: true, quizMessages: msgs })}\n\n`);
@@ -263,31 +198,16 @@ Regler:
 
           const nextUnanswered = toc.find((m) => !newAnsweredSections.map((a) => a.moment).includes(m)) || null;
 
-          const existingSummary = await db('ai_summaries')
-            .where({ student_id: studentId, course_id: courseId })
-            .first();
-
-          const summaryPatch = {
+          await upsertAiSummary(db, studentId, courseId, {
             quiz_score: totalScore,
             quiz_answered_sections: JSON.stringify(newAnsweredSections),
-          };
-
-          if (existingSummary) {
-            await db('ai_summaries')
-              .where({ student_id: studentId, course_id: courseId })
-              .update({ ...summaryPatch, updated_at: db.fn.now() });
-          } else {
-            await db('ai_summaries').insert({
-              student_id: studentId,
-              course_id: courseId,
-              summary: '',
-              goal_achievement: 0,
-              reasons: '',
-              current_section: toc[0] || '',
-              completed_sections: JSON.stringify([]),
-              ...summaryPatch,
-            });
-          }
+          }, {
+            summary: '',
+            goal_achievement: 0,
+            reasons: '',
+            current_section: toc[0] || '',
+            completed_sections: JSON.stringify([]),
+          });
 
           io.to(`student:${studentId}`).emit('quiz_progress', {
             quizScore: totalScore,
@@ -296,6 +216,12 @@ Regler:
             totalQuestions: toc.length,
             toc,
           });
+
+          if (nextUnanswered !== null && enableQuickReplies) {
+            const momentContent = getMomentContent(courseMaterial, nextUnanswered, toc);
+            const quickReplies = await generateQuickReplies(anthropic, momentContent, cleanedQuizMsg, 5);
+            io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
+          }
         } catch (quizErr) {
           logger.error({ err: quizErr }, 'Quiz progress error');
         } finally {
@@ -357,11 +283,7 @@ Regler:
         ]
       : trimmedMessages;
 
-    // Set SSE headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
+    setSSEHeaders(res);
 
     const io = req.app.get('io');
     const studentId = req.user.id;
@@ -369,6 +291,7 @@ Regler:
     logger.info({ msgs: sonnetMessages }, '[lär:sent]');
 
     // Stream Claude response
+    const MARKER = '[MOMENT_KLAR]';
     const claudeStart = Date.now();
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-6',
@@ -377,40 +300,16 @@ Regler:
       messages: sonnetMessages,
     });
 
-    // Buffer the last MARKER.length chars to avoid streaming [MOMENT_KLAR] to the client
-    const MARKER = '[MOMENT_KLAR]';
-    let assistantMessage = '';
-    let streamBuffer = '';
-    let ttsBuffer = '';
-    let ttsSeq = 0;
-    const sentRe = /^([\s\S]*?[.!?])(\s+)/;
-    for await (const chunk of stream) {
-      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-        assistantMessage += chunk.delta.text;
-        streamBuffer += chunk.delta.text;
-        ttsBuffer += chunk.delta.text;
-        if (streamBuffer.length > MARKER.length) {
-          const toSend = streamBuffer.slice(0, -MARKER.length);
-          res.write(`data: ${JSON.stringify({ text: toSend })}\n\n`);
-          streamBuffer = streamBuffer.slice(-MARKER.length);
-        }
-        // TTS: extract complete sentences and emit async
-        let sentMatch;
-        while ((sentMatch = sentRe.exec(ttsBuffer)) !== null) {
-          const sentence = sentMatch[1];
-          ttsBuffer = ttsBuffer.slice(sentMatch[0].length);
-          emitChatTTS(io, studentId, sentence, ttsSeq++).catch(() => {});
-        }
-      }
-    }
-    // Flush remainder, stripping marker if present
-    const bufferedRemainder = streamBuffer.replace(MARKER, '').trimEnd();
-    if (bufferedRemainder) {
-      res.write(`data: ${JSON.stringify({ text: bufferedRemainder })}\n\n`);
-    }
-    // TTS: flush remaining buffer
-    const ttsRemainder = ttsBuffer.replace(MARKER, '').trim();
-    if (ttsRemainder) emitChatTTS(io, studentId, ttsRemainder, ttsSeq++).catch(() => {});
+    const { fullText: assistantMessage, ttsSeq: ttsSeqAfterMain } = await streamWithMarkerAndTTS({
+      stream,
+      res,
+      io,
+      studentId,
+      markerBufLen: MARKER.length,
+      stripRe: [/\[MOMENT_KLAR\]/g],
+      startSeq: 0,
+      label: 'lär',
+    });
     io.to(`student:${studentId}`).emit('chat_tts_done');
 
     logger.info({ msg: assistantMessage }, '[lär:received]');
@@ -428,17 +327,7 @@ Regler:
     messages.push({ role: 'assistant', content: cleanedMessage });
 
     // Upsert chat session
-    if (existingSession) {
-      await db('chat_sessions')
-        .where({ student_id: req.user.id, course_id: courseId })
-        .update({ messages: JSON.stringify(messages), updated_at: db.fn.now() });
-    } else {
-      await db('chat_sessions').insert({
-        student_id: req.user.id,
-        course_id: courseId,
-        messages: JSON.stringify(messages),
-      });
-    }
+    await upsertChatSession(db, req.user.id, courseId, 'messages', messages, existingSession);
     lap('db: save session');
 
     // Track student progress (skip for teachers testing their own course)
@@ -485,29 +374,13 @@ Regler:
           ? Math.round((completedSections.length / toc.length) * 100)
           : 0;
 
-        const summaryData = {
+        await upsertAiSummary(db, studentId, courseId, {
           summary: '',
           goal_achievement: goalAchievement,
           reasons: '',
           current_section: newCurrentSection || '',
           completed_sections: JSON.stringify(completedSections),
-        };
-
-        const existingSummary = await db('ai_summaries')
-          .where({ student_id: studentId, course_id: courseId })
-          .first();
-
-        if (existingSummary) {
-          await db('ai_summaries')
-            .where({ student_id: studentId, course_id: courseId })
-            .update({ ...summaryData, updated_at: db.fn.now() });
-        } else {
-          await db('ai_summaries').insert({
-            student_id: studentId,
-            course_id: courseId,
-            ...summaryData,
-          });
-        }
+        });
 
         io.to(`student:${studentId}`).emit('analysis_complete', {
           goalAchievement,
@@ -533,24 +406,15 @@ Regler:
             messages: trimmedAdvance,
           });
 
-          let advanceMsg = '';
-          let ttsBuffer2 = '';
-          const sentRe2 = /^([\s\S]*?[.!?])(\s+)/;
-          for await (const chunk of advanceStream) {
-            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-              advanceMsg += chunk.delta.text;
-              ttsBuffer2 += chunk.delta.text;
-              res.write(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`);
-              let sentMatch2;
-              while ((sentMatch2 = sentRe2.exec(ttsBuffer2)) !== null) {
-                const sentence = sentMatch2[1];
-                ttsBuffer2 = ttsBuffer2.slice(sentMatch2[0].length);
-                emitChatTTS(io, studentId, sentence, ttsSeq++).catch(() => {});
-              }
-            }
-          }
-          const ttsRemainder2 = ttsBuffer2.trim();
-          if (ttsRemainder2) emitChatTTS(io, studentId, ttsRemainder2, ttsSeq++).catch(() => {});
+          const { fullText: advanceMsg } = await streamWithMarkerAndTTS({
+            stream: advanceStream,
+            res,
+            io,
+            studentId,
+            markerBufLen: 0,
+            stripRe: null,
+            startSeq: ttsSeqAfterMain,
+          });
           io.to(`student:${studentId}`).emit('chat_tts_done');
 
           messages.push({ role: 'assistant', content: advanceMsg });
@@ -561,37 +425,11 @@ Regler:
 
           res.write(`data: ${JSON.stringify({ done: true, messages })}\n\n`);
 
-          // Generate quick replies for the advance intro (same logic as normal turn)
+          // Generate quick replies for the advance intro
           if (enableQuickReplies) {
-            const escapedName = newCurrentSection.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const momentIdx = toc.indexOf(newCurrentSection);
-            const nextName = toc[momentIdx + 1];
-            let pattern;
-            if (nextName) {
-              const escapedNext = nextName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              pattern = new RegExp(`^## ${escapedName}$[\\s\\S]*?(?=^## ${escapedNext}$)`, 'm');
-            } else {
-              pattern = new RegExp(`^## ${escapedName}$[\\s\\S]*$`, 'm');
-            }
-            const momentMatch = courseMaterial?.match(pattern);
-            const momentContent = momentMatch ? momentMatch[0] : '';
-
-            try {
-              const r = await anthropic.messages.create({
-                model: 'claude-haiku-4-5-20251001',
-                max_tokens: 256,
-                messages: [{
-                  role: 'user',
-                  content: `AI-läraren undervisar om följande Moment:\n\n${momentContent || advanceMsg}\n\nAI:ns senaste fråga till eleven:\n${advanceMsg}\n\nGe exakt 2 svarsalternativ på svenska:\n1. Ett korrekt svar baserat på Moment-innehållet\n2. Ett felaktigt svar\n\nAlternativen ska vara korta (max 10 ord), blandade i slumpmässig ordning så eleven inte vet vilket som är rätt. Returnera ENDAST en JSON-array med 2 strings, inga förklaringar.`,
-                }],
-              });
-              const text = r.content[0].text.trim();
-              const match = text.match(/\[[\s\S]*\]/);
-              const quickReplies = match ? JSON.parse(match[0]) : [];
-              io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
-            } catch {
-              // quick replies are non-critical
-            }
+            const momentContent = getMomentContent(courseMaterial, newCurrentSection, toc);
+            const quickReplies = await generateQuickReplies(anthropic, momentContent, advanceMsg);
+            io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
           }
 
         } else if (momentComplete && isLastMoment) {
@@ -602,41 +440,10 @@ Regler:
         } else {
           // Normal turn: generate quick replies via Haiku
           const momentForReplies = newCurrentSection || currentMoment;
-          const momentContent = (() => {
-            if (!momentForReplies || !courseMaterial) return '';
-            const escapedName = momentForReplies.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const momentIdx = toc.indexOf(momentForReplies);
-            const nextName = toc[momentIdx + 1];
-            let pattern;
-            if (nextName) {
-              const escapedNext = nextName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              pattern = new RegExp(`^## ${escapedName}$[\\s\\S]*?(?=^## ${escapedNext}$)`, 'm');
-            } else {
-              pattern = new RegExp(`^## ${escapedName}$[\\s\\S]*$`, 'm');
-            }
-            const m = courseMaterial.match(pattern);
-            return m ? m[0] : '';
-          })();
+          const momentContent = getMomentContent(courseMaterial, momentForReplies, toc);
 
-          const quickRepliesPromise = (enableQuickReplies)
-            ? anthropic.messages.create({
-                model: 'claude-haiku-4-5-20251001',
-                max_tokens: 256,
-                messages: [
-                  {
-                    role: 'user',
-                    content: `AI-läraren undervisar om följande Moment:\n\n${momentContent || cleanedMessage}\n\nAI:ns senaste fråga till eleven:\n${cleanedMessage}\n\nGe exakt 2 svarsalternativ på svenska:\n1. Ett korrekt svar baserat på Moment-innehållet\n2. Ett felaktigt svar\n\nAlternativen ska vara korta (max 10 ord), blandade i slumpmässig ordning så eleven inte vet vilket som är rätt. Returnera ENDAST en JSON-array med 2 strings, inga förklaringar.`,
-                  },
-                ],
-              }).then(r => {
-                const text = r.content[0].text.trim();
-                const match = text.match(/\[[\s\S]*\]/);
-                return match ? JSON.parse(match[0]) : [];
-              }).catch(() => [])
-            : Promise.resolve(null); // null = feature off, don't emit
-
-          const quickReplies = await quickRepliesPromise;
-          if (quickReplies !== null) {
+          if (enableQuickReplies) {
+            const quickReplies = await generateQuickReplies(anthropic, momentContent, cleanedMessage);
             io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
           }
 

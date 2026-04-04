@@ -228,8 +228,11 @@ export default function TestChatPage() {
       setQuizAnsweredSections([]);
       setQuizScore(null);
       quizIntroStartedRef.current = false;
-      setMode('learn');
-      await streamMessage({ intro: true });
+      if (mode === 'forhör') {
+        await streamMessage({ mode: 'forhör', intro: true });
+      } else {
+        await streamMessage({ intro: true });
+      }
     } finally {
       setResetting(false);
     }
@@ -241,6 +244,7 @@ export default function TestChatPage() {
     const msg = input.trim();
     setInput('');
     if (mode === 'forhör') {
+      setQuickReplies([]);
       setQuizMessages(m => [...m, { role: 'user', content: msg }]);
       await streamMessage({ message: msg, mode: 'forhör' });
     } else {
@@ -253,8 +257,13 @@ export default function TestChatPage() {
   const sendQuickReply = async (reply) => {
     if (sending) return;
     setQuickReplies([]);
-    setMessages(m => [...m, { role: 'user', content: reply }]);
-    await streamMessage({ message: reply });
+    if (mode === 'forhör') {
+      setQuizMessages(m => [...m, { role: 'user', content: reply }]);
+      await streamMessage({ message: reply, mode: 'forhör' });
+    } else {
+      setMessages(m => [...m, { role: 'user', content: reply }]);
+      await streamMessage({ message: reply });
+    }
   };
 
   // Derived quiz values
@@ -428,14 +437,18 @@ export default function TestChatPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {mode === 'learn' && quickReplies.length > 0 && (
+          {quickReplies.length > 0 && (
             <div className="bg-white border-t border-gray-100 px-4 py-2 flex flex-wrap gap-2">
               {quickReplies.map((reply, i) => (
                 <button
                   key={i}
                   onClick={() => sendQuickReply(reply)}
                   disabled={sending}
-                  className="text-sm px-3 py-1.5 rounded-full border border-blue-300 text-blue-600 hover:bg-blue-50 disabled:opacity-50 transition-colors"
+                  className={`text-sm px-3 py-1.5 rounded-full border disabled:opacity-50 transition-colors ${
+                    mode === 'forhör'
+                      ? 'border-purple-300 text-purple-600 hover:bg-purple-50'
+                      : 'border-blue-300 text-blue-600 hover:bg-blue-50'
+                  }`}
                 >
                   {reply}
                 </button>
