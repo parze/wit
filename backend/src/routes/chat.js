@@ -71,7 +71,7 @@ router.post('/:courseId', authMiddleware, async (req, res) => {
     const DEFAULT_QUIZ_PROMPT = `Du är en provledare som testar elevens kunskaper om kursmaterialet. Svara ENBART baserat på kursmaterialet nedan.
 
 Regler:
-- Ställ 1–5 frågor per Moment baserat på innehållets komplexitet och djup – täck de viktigaste kunskaperna
+- Ställ frågor som täcker alla centrala begrepp och fakta i Moment-innehållet – minst en fråga per delämne, så många som behövs för fullständig täckning
 - Variera frågetyper: faktafrågor, förståelsefrågor och tillämpningsfrågor
 - Eleven har EN chans att svara per fråga – inga följdfrågor eller ledtrådar
 - Efter varje svar om du ska ställa FLER frågor om SAMMA Moment: ge kortfattad feedback och skriv [QUIZ_POÄNG:X.XX] på en EGEN rad allra sist (0.0=helt fel, 0.5=delvis rätt, 1.0=perfekt)
@@ -120,11 +120,13 @@ Regler:
       const currentMoment = toc.find((m) => !answeredMoments.includes(m)) || null;
       const currentIndex = toc.indexOf(currentMoment);
       const nextMoment = currentIndex >= 0 && currentIndex < toc.length - 1 ? toc[currentIndex + 1] : null;
+      const currentMomentContent = getMomentContent(courseMaterial, currentMoment, toc);
+      const contentBlock = currentMomentContent ? `\n\nInnehåll för Moment "${currentMoment}":\n${currentMomentContent}\n` : '';
 
       // Build message list for this turn
       const msgs = [...quizMessages];
       if (intro) {
-        msgs.push({ role: 'user', content: `[Förhörsintro: Presentera att detta är ett förhör om "${course.title}". AI:n ställer tillräckligt många frågor per Moment för att täcka hela materialet. Skriv INTE [QUIZ_POÄNG] eller [MOMENT_SLUT] i detta svar. Ställ direkt den första frågan om Moment "${currentMoment}".]` });
+        msgs.push({ role: 'user', content: `[Förhörsintro: Presentera att detta är ett förhör om "${course.title}". AI:n ställer tillräckligt många frågor per Moment för att täcka hela materialet. Skriv INTE [QUIZ_POÄNG] eller [MOMENT_SLUT] i detta svar.${contentBlock}\nStäll direkt den första frågan om Moment "${currentMoment}" baserat på innehållet ovan.]` });
       } else {
         msgs.push({ role: 'user', content: message.trim() });
       }
@@ -133,7 +135,7 @@ Regler:
 
       const sonnetMsgs = (currentMoment && !intro)
         ? [
-            { role: 'user', content: `[Förhörskontext: Eleven svarade nu på en fråga om Moment "${currentMoment}". Ge feedback och skriv antingen [QUIZ_POÄNG:X.XX] om du vill ställa fler frågor om samma Moment, eller [MOMENT_SLUT:X.XX] om Momentet är tillräckligt täckt (0.0=helt fel, 0.5=delvis, 1.0=perfekt). ${nextMoment ? `Vid [MOMENT_SLUT]: gå direkt till Moment "${nextMoment}".` : 'Vid [MOMENT_SLUT]: alla Moment klara – avsluta förhöret och sammanfatta totalpoängen.'}]` },
+            { role: 'user', content: `[Förhörskontext: Eleven svarade nu på en fråga om Moment "${currentMoment}".${contentBlock}\nGe feedback och skriv antingen [QUIZ_POÄNG:X.XX] om du vill ställa fler frågor om samma Moment, eller [MOMENT_SLUT:X.XX] om Momentet är tillräckligt täckt (0.0=helt fel, 0.5=delvis, 1.0=perfekt). ${nextMoment ? `Vid [MOMENT_SLUT]: gå direkt till Moment "${nextMoment}".` : 'Vid [MOMENT_SLUT]: alla Moment klara – avsluta förhöret och sammanfatta totalpoängen.'}]` },
             { role: 'assistant', content: 'Förstått.' },
             ...trimmedMsgs,
           ]
@@ -273,11 +275,13 @@ Regler:
     const nextMoment = currentMomentIndex >= 0 && currentMomentIndex < toc.length - 1
       ? toc[currentMomentIndex + 1]
       : null;
+    const currentMomentContent = getMomentContent(courseMaterial, currentMoment, toc);
+    const learnContentBlock = currentMomentContent ? `\n\nInnehåll för detta Moment:\n${currentMomentContent}\n` : '';
 
     // Prepend Moment context to messages sent to Sonnet (never saved to DB)
     const sonnetMessages = currentMoment
       ? [
-          { role: 'user', content: `[Momentkontext: Eleven arbetar nu med Moment "${currentMoment}". Undervisa berättande och narrativt – förklara ett begrepp i taget med konkreta exempel och levande beskrivningar. Avsluta ALLTID med en fråga om något du PRECIS beskrivit i detta svar (inte om något nytt eller framtida). Haiku genererar 2 svarsalternativ till din fråga – tänk på att frågan ska ha ett tydligt rätt och fel svar. När du har täckt det viktigaste innehållet, skriv exakt [MOMENT_KLAR] på en EGEN rad allra sist i ditt svar. Fråga INTE eleven om de vill fortsätta.${nextMoment ? ` Nästa Moment är "${nextMoment}".` : ''}]` },
+          { role: 'user', content: `[Momentkontext: Eleven arbetar nu med Moment "${currentMoment}".${learnContentBlock}\nUndervisa berättande och narrativt – förklara ett begrepp i taget med konkreta exempel och levande beskrivningar. Täck allt innehåll i Momentet. Avsluta ALLTID med en fråga om något du PRECIS beskrivit i detta svar (inte om något nytt eller framtida). Haiku genererar 2 svarsalternativ till din fråga – tänk på att frågan ska ha ett tydligt rätt och fel svar. När du har täckt det viktigaste innehållet, skriv exakt [MOMENT_KLAR] på en EGEN rad allra sist i ditt svar. Fråga INTE eleven om de vill fortsätta.${nextMoment ? ` Nästa Moment är "${nextMoment}".` : ''}]` },
           { role: 'assistant', content: 'Förstått, jag fokuserar på detta Moment.' },
           ...trimmedMessages,
         ]
