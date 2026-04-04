@@ -419,6 +419,8 @@ export default function TestChatPage() {
                       <span className="dot-bounce" style={{ animationDelay: '150ms' }} />
                       <span className="dot-bounce" style={{ animationDelay: '300ms' }} />
                     </span>
+                  ) : sending && i === activeMessages.length - 1 ? (
+                    <span className="whitespace-pre-wrap">{msg.content}</span>
                   ) : (
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                   )}
