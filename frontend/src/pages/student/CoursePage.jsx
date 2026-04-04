@@ -35,6 +35,13 @@ export default function CoursePage() {
   const lastAssistantRef = useRef(null);
   const inputRef = useRef(null);
 
+  // TTS state
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const ttsEnabledRef = useRef(true);
+  const audioQueueRef = useRef({});
+  const nextTTSSeqRef = useRef(0);
+  const currentAudioRef = useRef(null);
+
   useEffect(() => {
     fetchCourse();
   }, [id]);
@@ -54,10 +61,21 @@ export default function CoursePage() {
       setQuizAnsweredSections(qas ?? []);
       if (newToc?.length) setToc(newToc);
     });
+    socket.on('chat_tts_chunk', ({ audioB64, seq }) => {
+      if (!ttsEnabledRef.current) return;
+      audioQueueRef.current[seq] = audioB64;
+      tryPlayNextTTS();
+    });
+    socket.on('chat_tts_skip', ({ seq }) => {
+      audioQueueRef.current[seq] = null;
+      tryPlayNextTTS();
+    });
     return () => {
       socket.off('analysis_complete');
       socket.off('quick_replies');
       socket.off('quiz_progress');
+      socket.off('chat_tts_chunk');
+      socket.off('chat_tts_skip');
     };
   }, []);
 
@@ -83,6 +101,22 @@ export default function CoursePage() {
     quizIntroStartedRef.current = true;
     streamMessage({ mode: 'forhör', intro: true });
   }, [mode, loading]);
+
+  function tryPlayNextTTS() {
+    if (currentAudioRef.current) return;
+    const seq = nextTTSSeqRef.current;
+    if (!(seq in audioQueueRef.current)) return;
+    const b64 = audioQueueRef.current[seq];
+    delete audioQueueRef.current[seq];
+    nextTTSSeqRef.current = seq + 1;
+    if (!b64) { tryPlayNextTTS(); return; } // null = skip
+    const audio = new Audio(`data:audio/mpeg;base64,${b64}`);
+    currentAudioRef.current = audio;
+    const advance = () => { currentAudioRef.current = null; tryPlayNextTTS(); };
+    audio.onended = advance;
+    audio.onerror = advance;
+    audio.play().catch(advance);
+  }
 
   const fetchCourse = async () => {
     try {
@@ -135,6 +169,11 @@ export default function CoursePage() {
       setMessages(m => [...m, { role: 'assistant', content: '' }]);
     }
     try {
+      // Reset TTS queue for new message
+      audioQueueRef.current = {};
+      nextTTSSeqRef.current = 0;
+      if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null; }
+
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/chat/${id}`, {
         method: 'POST',
@@ -235,6 +274,22 @@ export default function CoursePage() {
         <div className="flex items-center gap-3 px-4 py-2.5">
           <button onClick={() => navigate('/student/courses')} className="text-gray-400 hover:text-gray-600 text-lg leading-none">←</button>
           <span className="text-sm font-medium text-gray-800 truncate flex-1">{course?.title}</span>
+          {mode === 'learn' && (
+            <button
+              onClick={() => {
+                const next = !ttsEnabled;
+                setTtsEnabled(next);
+                ttsEnabledRef.current = next;
+                if (!next && currentAudioRef.current) {
+                  currentAudioRef.current.pause();
+                  currentAudioRef.current = null;
+                }
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap px-1"
+            >
+              {ttsEnabled ? 'Ljud av' : 'Ljud på'}
+            </button>
+          )}
           {stars > 0 && <span className="text-sm mr-1">{'⭐'.repeat(stars)}</span>}
           {toc.length > 0 && (
             <span className={`text-xs font-medium whitespace-nowrap ${mode === 'forhör' ? 'text-purple-500' : 'text-blue-500'}`}>

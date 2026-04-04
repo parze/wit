@@ -34,6 +34,13 @@ export default function TestChatPage() {
   const lastAssistantRef = useRef(null);
   const inputRef = useRef(null);
 
+  // TTS state
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const ttsEnabledRef = useRef(true);
+  const audioQueueRef = useRef({});
+  const nextTTSSeqRef = useRef(0);
+  const currentAudioRef = useRef(null);
+
   useEffect(() => {
     Promise.all([
       api.get(`/courses/${id}`),
@@ -74,10 +81,21 @@ export default function TestChatPage() {
       setQuizAnsweredSections(qas ?? []);
       if (newToc?.length) setToc(newToc);
     });
+    socket.on('chat_tts_chunk', ({ audioB64, seq }) => {
+      if (!ttsEnabledRef.current) return;
+      audioQueueRef.current[seq] = audioB64;
+      tryPlayNextTTS();
+    });
+    socket.on('chat_tts_skip', ({ seq }) => {
+      audioQueueRef.current[seq] = null;
+      tryPlayNextTTS();
+    });
     return () => {
       socket.off('analysis_complete');
       socket.off('quick_replies');
       socket.off('quiz_progress');
+      socket.off('chat_tts_chunk');
+      socket.off('chat_tts_skip');
     };
   }, []);
 
@@ -104,6 +122,22 @@ export default function TestChatPage() {
     streamMessage({ mode: 'forhör', intro: true });
   }, [mode, loading]);
 
+  function tryPlayNextTTS() {
+    if (currentAudioRef.current) return;
+    const seq = nextTTSSeqRef.current;
+    if (!(seq in audioQueueRef.current)) return;
+    const b64 = audioQueueRef.current[seq];
+    delete audioQueueRef.current[seq];
+    nextTTSSeqRef.current = seq + 1;
+    if (!b64) { tryPlayNextTTS(); return; }
+    const audio = new Audio(`data:audio/mpeg;base64,${b64}`);
+    currentAudioRef.current = audio;
+    const advance = () => { currentAudioRef.current = null; tryPlayNextTTS(); };
+    audio.onended = advance;
+    audio.onerror = advance;
+    audio.play().catch(advance);
+  }
+
   const streamMessage = async (body) => {
     const isQuiz = body.mode === 'forhör';
     setSending(true);
@@ -113,6 +147,10 @@ export default function TestChatPage() {
       setMessages(m => [...m, { role: 'assistant', content: '' }]);
     }
     try {
+      audioQueueRef.current = {};
+      nextTTSSeqRef.current = 0;
+      if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null; }
+
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/chat/${id}`, {
         method: 'POST',
@@ -176,6 +214,9 @@ export default function TestChatPage() {
 
   const resetBoth = async () => {
     setResetting(true);
+    if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null; }
+    audioQueueRef.current = {};
+    nextTTSSeqRef.current = 0;
     try {
       await api.delete(`/courses/${id}/test-session`);
       await api.delete(`/courses/${id}/quiz-session`).catch(() => {});
@@ -234,6 +275,22 @@ export default function TestChatPage() {
           <button onClick={() => navigate(`/teacher/courses/${id}`)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">←</button>
           <span className="text-sm font-medium text-gray-800 truncate flex-1">{course?.title}</span>
           <span className="text-xs bg-amber-100 text-amber-700 font-medium px-2 py-0.5 rounded-full">Testläge</span>
+          {mode === 'learn' && (
+            <button
+              onClick={() => {
+                const next = !ttsEnabled;
+                setTtsEnabled(next);
+                ttsEnabledRef.current = next;
+                if (!next && currentAudioRef.current) {
+                  currentAudioRef.current.pause();
+                  currentAudioRef.current = null;
+                }
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap px-1"
+            >
+              {ttsEnabled ? 'Ljud av' : 'Ljud på'}
+            </button>
+          )}
           {toc.length > 0 && (
             <span className={`text-xs font-medium whitespace-nowrap ${mode === 'forhör' ? 'text-purple-500' : 'text-blue-500'}`}>
               {mode === 'forhör'

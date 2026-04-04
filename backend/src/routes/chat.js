@@ -7,6 +7,47 @@ const logger = require('../logger');
 const router = express.Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'kpTdKfohzvarfFPnwuHW';
+
+function stripMarkdown(text) {
+  return text
+    .replace(/#{1,6}\s+/g, '')
+    .replace(/\*{1,2}([^*\n]+)\*{1,2}/g, '$1')
+    .replace(/`[^`]+`/g, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\n+/g, ' ')
+    .trim();
+}
+
+async function emitChatTTS(io, studentId, text, seq) {
+  const API_KEY = process.env.ELEVENLABS_API_KEY;
+  if (!API_KEY) { io.to(`student:${studentId}`).emit('chat_tts_skip', { seq }); return; }
+  const plain = stripMarkdown(text);
+  if (!plain || plain.length < 4) { io.to(`student:${studentId}`).emit('chat_tts_skip', { seq }); return; }
+  try {
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}/stream`,
+      {
+        method: 'POST',
+        headers: { 'xi-api-key': API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: plain,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: { stability: 0.5, similarity_boost: 0.8 },
+        }),
+      }
+    );
+    if (!response.ok) { io.to(`student:${studentId}`).emit('chat_tts_skip', { seq }); return; }
+    const chunks = [];
+    for await (const chunk of response.body) chunks.push(chunk);
+    const audioB64 = Buffer.concat(chunks).toString('base64');
+    io.to(`student:${studentId}`).emit('chat_tts_chunk', { audioB64, seq });
+  } catch {
+    io.to(`student:${studentId}`).emit('chat_tts_skip', { seq });
+  }
+}
+
 // POST /api/chat/:courseId  (students enrolled in the course, or the teacher who owns it)
 router.post('/:courseId', authMiddleware, async (req, res) => {
   const { courseId } = req.params;
@@ -57,7 +98,7 @@ router.post('/:courseId', authMiddleware, async (req, res) => {
 
     logger.debug(`[chat] system prompt length: ${courseMaterial?.length ?? 0} chars`);
 
-    const BASE_CHAT_PROMPT = `Du är en hjälpsam AI-lärare. Svara på elevens frågor baserat ENBART på kursmaterialet nedan. Om eleven frågar om något som inte finns i kursmaterialet, vägled dem tillbaka till ämnet på ett vänligt sätt.`;
+    const BASE_CHAT_PROMPT = `Du är en engagerande AI-lärare som undervisar berättande. Presentera varje nytt begrepp som en liten berättelse eller förklaring – levande och konkret. Avsluta ALLTID varje svar med EN fråga om något du PRECIS beskrivit i samma svar, inte om något nytt. Svara ENBART baserat på kursmaterialet nedan.`;
 
     const DEFAULT_QUIZ_PROMPT = `Du är en provledare som testar elevens kunskaper om kursmaterialet. Svara ENBART baserat på kursmaterialet nedan.
 
@@ -297,7 +338,7 @@ Regler:
     // Prepend Moment context to messages sent to Sonnet (never saved to DB)
     const sonnetMessages = currentMoment
       ? [
-          { role: 'user', content: `[Momentkontext: Eleven arbetar nu med Moment "${currentMoment}". Fokusera på att undervisa detta Moment. När du har gått igenom det viktigaste innehållet, skriv exakt [MOMENT_KLAR] på en EGEN rad allra sist i ditt svar. Fråga INTE eleven om de vill fortsätta – gå bara vidare direkt.${nextMoment ? ` Nästa Moment är "${nextMoment}".` : ''}]` },
+          { role: 'user', content: `[Momentkontext: Eleven arbetar nu med Moment "${currentMoment}". Undervisa berättande och narrativt – förklara ett begrepp i taget med konkreta exempel och levande beskrivningar. Avsluta ALLTID med en fråga om något du PRECIS beskrivit i detta svar (inte om något nytt eller framtida). Haiku genererar 2 svarsalternativ till din fråga – tänk på att frågan ska ha ett tydligt rätt och fel svar. När du har täckt det viktigaste innehållet, skriv exakt [MOMENT_KLAR] på en EGEN rad allra sist i ditt svar. Fråga INTE eleven om de vill fortsätta.${nextMoment ? ` Nästa Moment är "${nextMoment}".` : ''}]` },
           { role: 'assistant', content: 'Förstått, jag fokuserar på detta Moment.' },
           ...trimmedMessages,
         ]
@@ -308,6 +349,9 @@ Regler:
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
+
+    const io = req.app.get('io');
+    const studentId = req.user.id;
 
     logger.info({ msgs: sonnetMessages }, '[lär:sent]');
 
@@ -324,14 +368,25 @@ Regler:
     const MARKER = '[MOMENT_KLAR]';
     let assistantMessage = '';
     let streamBuffer = '';
+    let ttsBuffer = '';
+    let ttsSeq = 0;
+    const sentRe = /^([\s\S]*?[.!?])(\s+)/;
     for await (const chunk of stream) {
       if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
         assistantMessage += chunk.delta.text;
         streamBuffer += chunk.delta.text;
+        ttsBuffer += chunk.delta.text;
         if (streamBuffer.length > MARKER.length) {
           const toSend = streamBuffer.slice(0, -MARKER.length);
           res.write(`data: ${JSON.stringify({ text: toSend })}\n\n`);
           streamBuffer = streamBuffer.slice(-MARKER.length);
+        }
+        // TTS: extract complete sentences and emit async
+        let sentMatch;
+        while ((sentMatch = sentRe.exec(ttsBuffer)) !== null) {
+          const sentence = sentMatch[1];
+          ttsBuffer = ttsBuffer.slice(sentMatch[0].length);
+          emitChatTTS(io, studentId, sentence, ttsSeq++).catch(() => {});
         }
       }
     }
@@ -340,6 +395,10 @@ Regler:
     if (bufferedRemainder) {
       res.write(`data: ${JSON.stringify({ text: bufferedRemainder })}\n\n`);
     }
+    // TTS: flush remaining buffer
+    const ttsRemainder = ttsBuffer.replace(MARKER, '').trim();
+    if (ttsRemainder) emitChatTTS(io, studentId, ttsRemainder, ttsSeq++).catch(() => {});
+    io.to(`student:${studentId}`).emit('chat_tts_done');
 
     logger.info({ msg: assistantMessage }, '[lär:received]');
 
@@ -394,8 +453,6 @@ Regler:
     lap('TOTAL (before response)');
 
     // Run TOC advancement async on the still-open SSE connection
-    const studentId = req.user.id;
-    const io = req.app.get('io');
     const isLastMoment = currentMomentIndex >= 0 && currentMomentIndex === toc.length - 1;
 
     (async () => {
@@ -452,7 +509,7 @@ Regler:
           // Auto-advance: stream intro to next Moment on the same SSE connection
           res.write(`data: ${JSON.stringify({ newMessage: true })}\n\n`);
 
-          const advancePrompt = `[Momentövergång: Moment "${currentMoment}" klart. Presentera nästa Moment "${newCurrentSection}" med 2–3 meningar intro + inbjudande fråga. Skriv INTE [MOMENT_KLAR].]`;
+          const advancePrompt = `[Momentövergång: Moment "${currentMoment}" klart. Introducera nästa Moment "${newCurrentSection}" med 2–3 berättande meningar och avsluta med EN fråga om något du precis beskrivit (så att eleven kan svara med ett av de quick replies som genereras). Skriv INTE [MOMENT_KLAR].]`;
           const advanceMessages = [...messages, { role: 'user', content: advancePrompt }];
           const trimmedAdvance = advanceMessages.length > 20 ? advanceMessages.slice(-20) : advanceMessages;
 
@@ -464,12 +521,24 @@ Regler:
           });
 
           let advanceMsg = '';
+          let ttsBuffer2 = '';
+          const sentRe2 = /^([\s\S]*?[.!?])(\s+)/;
           for await (const chunk of advanceStream) {
             if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
               advanceMsg += chunk.delta.text;
+              ttsBuffer2 += chunk.delta.text;
               res.write(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`);
+              let sentMatch2;
+              while ((sentMatch2 = sentRe2.exec(ttsBuffer2)) !== null) {
+                const sentence = sentMatch2[1];
+                ttsBuffer2 = ttsBuffer2.slice(sentMatch2[0].length);
+                emitChatTTS(io, studentId, sentence, ttsSeq++).catch(() => {});
+              }
             }
           }
+          const ttsRemainder2 = ttsBuffer2.trim();
+          if (ttsRemainder2) emitChatTTS(io, studentId, ttsRemainder2, ttsSeq++).catch(() => {});
+          io.to(`student:${studentId}`).emit('chat_tts_done');
 
           messages.push({ role: 'assistant', content: advanceMsg });
 
