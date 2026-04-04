@@ -298,7 +298,7 @@ export default function TeachMePage() {
           className="text-gray-400 hover:text-gray-600 text-sm"
         >←</button>
         <div className="flex-1">
-          <h2 className="font-semibold text-gray-900">Undervisa mig</h2>
+          <h2 className="font-semibold text-gray-900">Läs o lär</h2>
           <p className="text-xs text-gray-400">Uppläsning av kursmaterial</p>
         </div>
         <div className="flex items-center gap-2">

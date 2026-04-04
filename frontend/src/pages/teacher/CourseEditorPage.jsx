@@ -380,6 +380,13 @@ export default function CourseEditorPage() {
               <p className="text-sm text-gray-400 mb-3">Upplev kursen som en elev – samma vy, samma AI.</p>
               <div className="flex gap-2 flex-wrap">
                 <button
+                  onClick={() => navigate(`/teacher/courses/${id}/teach`)}
+                  disabled={!compiledMaterial}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+                >
+                  Läs o lär
+                </button>
+                <button
                   onClick={() => navigate(`/teacher/courses/${id}/test-chat?mode=learn`)}
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
                 >
@@ -390,13 +397,6 @@ export default function CourseEditorPage() {
                   className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
                 >
                   Förhör mig
-                </button>
-                <button
-                  onClick={() => navigate(`/teacher/courses/${id}/teach`)}
-                  disabled={!compiledMaterial}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
-                >
-                  Undervisa mig
                 </button>
                 <button
                   onClick={clearTestSession}
