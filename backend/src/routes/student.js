@@ -82,7 +82,7 @@ router.get('/courses/:id', authMiddleware, requireRole('student'), async (req, r
       questions,
       status: progress ? progress.status : 'not_started',
       messages: chatSession ? chatSession.messages : [],
-      quizMessages: chatSession ? (chatSession.quiz_messages || []) : [],
+      quizMessages: chatSession ? (chatSession.quiz_messages || []).filter(m => m.role !== 'meta') : [],
       quizResult: quizResult || null,
       aiSummary: aiSummary || null,
       quizAnsweredSections: aiSummary?.quiz_answered_sections || [],

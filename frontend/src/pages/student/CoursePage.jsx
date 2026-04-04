@@ -9,7 +9,7 @@ export default function CoursePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [course, setCourse] = useState(null);
-  const [mode, setMode] = useState('learn'); // 'learn' | 'quiz'
+  const [mode, setMode] = useState('learn'); // 'learn' | 'forhör'
 
   // Learn state
   const [goalAchievement, setGoalAchievement] = useState(null);
@@ -63,7 +63,7 @@ export default function CoursePage() {
 
   // Scroll to latest message
   useEffect(() => {
-    const active = mode === 'quiz' ? quizMessages : messages;
+    const active = mode === 'forhör' ? quizMessages : messages;
     if (active.length === 0) return;
     const last = active[active.length - 1];
     if (last.role === 'assistant') {
@@ -75,13 +75,13 @@ export default function CoursePage() {
 
   // Trigger quiz intro when switching to quiz tab for the first time
   useEffect(() => {
-    if (mode !== 'quiz') return;
+    if (mode !== 'forhör') return;
     if (loading) return;
     if (quizMessages.length > 0) return;
     if (quizIntroStartedRef.current) return;
     if (toc.length === 0) return;
     quizIntroStartedRef.current = true;
-    streamMessage({ mode: 'quiz', intro: true });
+    streamMessage({ mode: 'forhör', intro: true });
   }, [mode, loading]);
 
   const fetchCourse = async () => {
@@ -127,7 +127,7 @@ export default function CoursePage() {
   };
 
   const streamMessage = async (body) => {
-    const isQuiz = body.mode === 'quiz';
+    const isQuiz = body.mode === 'forhör';
     setSending(true);
     if (isQuiz) {
       setQuizMessages(m => [...m, { role: 'assistant', content: '' }]);
@@ -168,6 +168,8 @@ export default function CoursePage() {
                 return updated;
               });
             }
+          } else if (payload.newMessage) {
+            setMessages(m => [...m, { role: 'assistant', content: '' }]);
           } else if (payload.done) {
             if (isQuiz) {
               setQuizMessages(payload.quizMessages);
@@ -197,9 +199,9 @@ export default function CoursePage() {
     if (!input.trim() || sending) return;
     const msg = input.trim();
     setInput('');
-    if (mode === 'quiz') {
+    if (mode === 'forhör') {
       setQuizMessages(m => [...m, { role: 'user', content: msg }]);
-      await streamMessage({ message: msg, mode: 'quiz' });
+      await streamMessage({ message: msg, mode: 'forhör' });
     } else {
       setQuickReplies([]);
       setMessages(m => [...m, { role: 'user', content: msg }]);
@@ -219,8 +221,8 @@ export default function CoursePage() {
   const currentQuestion = toc.find(m => !answeredMoments.includes(m)) || null;
   const quizDone = toc.length > 0 && quizAnsweredSections.length >= toc.length;
 
-  const activeMessages = mode === 'quiz' ? quizMessages : messages;
-  const activeProgress = mode === 'quiz'
+  const activeMessages = mode === 'forhör' ? quizMessages : messages;
+  const activeProgress = mode === 'forhör'
     ? (quizScore ?? 0)
     : (goalAchievement ?? 0);
 
@@ -235,8 +237,8 @@ export default function CoursePage() {
           <span className="text-sm font-medium text-gray-800 truncate flex-1">{course?.title}</span>
           {stars > 0 && <span className="text-sm mr-1">{'⭐'.repeat(stars)}</span>}
           {toc.length > 0 && (
-            <span className={`text-xs font-medium whitespace-nowrap ${mode === 'quiz' ? 'text-purple-500' : 'text-blue-500'}`}>
-              {mode === 'quiz'
+            <span className={`text-xs font-medium whitespace-nowrap ${mode === 'forhör' ? 'text-purple-500' : 'text-blue-500'}`}>
+              {mode === 'forhör'
                 ? `${quizAnsweredSections.length}/${toc.length} frågor`
                 : `${aiSummary?.completed_sections?.length ?? 0}/${toc.length}`}
             </span>
@@ -244,7 +246,7 @@ export default function CoursePage() {
         </div>
         <div className="h-1 bg-gray-100">
           <div
-            className={`h-1 transition-all duration-500 ${mode === 'quiz' ? 'bg-purple-500' : 'bg-blue-500'}`}
+            className={`h-1 transition-all duration-500 ${mode === 'forhör' ? 'bg-purple-500' : 'bg-blue-500'}`}
             style={{ width: `${activeProgress}%` }}
           />
         </div>
@@ -266,13 +268,13 @@ export default function CoursePage() {
           Lär mig
         </button>
         <button
-          onClick={() => setMode('quiz')}
+          onClick={() => setMode('forhör')}
           disabled={sending}
           className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-            mode === 'quiz' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+            mode === 'forhör' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
           }`}
         >
-          Quiza mig
+          Förhör mig
         </button>
       </div>
 
@@ -286,17 +288,17 @@ export default function CoursePage() {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    {mode === 'quiz' ? 'Provresultat' : 'Moment'}
+                    {mode === 'forhör' ? 'Förhörsresultat' : 'Moment'}
                   </p>
                   <span className="text-xs text-gray-400">
-                    {mode === 'quiz'
+                    {mode === 'forhör'
                       ? `${quizAnsweredSections.length}/${toc.length}`
                       : `${(aiSummary?.completed_sections?.length ?? 0)}/${toc.length}`}
                   </span>
                 </div>
                 <ul className="space-y-2">
                   {toc.map((section, i) => {
-                    if (mode === 'quiz') {
+                    if (mode === 'forhör') {
                       const answered = quizAnsweredSections.find(s => s.moment === section);
                       const isCurrent = !quizDone && section === currentQuestion;
                       const scorePercent = answered ? Math.round(answered.score * 100) : null;
@@ -340,18 +342,18 @@ export default function CoursePage() {
                 </ul>
 
                 {/* Quiz total score */}
-                {mode === 'quiz' && quizAnsweredSections.length > 0 && (
+                {mode === 'forhör' && quizAnsweredSections.length > 0 && (
                   <div className="border-t border-gray-100 pt-3 mt-3">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Totalpoäng</p>
                     <p className="text-2xl font-bold text-gray-800">{quizScore ?? 0}%</p>
-                    {quizDone && <p className="text-xs text-purple-600 font-medium mt-0.5">Provet slutfört</p>}
+                    {quizDone && <p className="text-xs text-purple-600 font-medium mt-0.5">Förhöret slutfört</p>}
                   </div>
                 )}
               </div>
             </>
           ) : (
             <p className="text-sm text-gray-400 text-center leading-relaxed pt-4">
-              {mode === 'quiz' ? 'Provet startar när du öppnar quiz-fliken.' : 'Börja chatta så analyseras din förståelse automatiskt.'}
+              {mode === 'forhör' ? 'Förhöret startar när du öppnar fliken.' : 'Börja chatta så analyseras din förståelse automatiskt.'}
             </p>
           )}
         </aside>
@@ -368,7 +370,7 @@ export default function CoursePage() {
                 <div
                   className={`max-w-xs sm:max-w-lg md:max-w-2xl px-4 py-3 rounded-2xl text-sm md:text-lg leading-relaxed ${
                     msg.role === 'user'
-                      ? `${mode === 'quiz' ? 'bg-purple-600' : 'bg-blue-600'} text-white rounded-tr-sm`
+                      ? `${mode === 'forhör' ? 'bg-purple-600' : 'bg-blue-600'} text-white rounded-tr-sm`
                       : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm prose prose-sm prose-blue max-w-none'
                   }`}
                 >
@@ -423,16 +425,16 @@ export default function CoursePage() {
               type="text"
               value={input}
               onChange={e => setInput(e.target.value)}
-              placeholder={mode === 'quiz' ? 'Skriv ditt svar...' : 'Skriv din fråga...'}
-              disabled={sending || (mode === 'quiz' && quizDone)}
+              placeholder={mode === 'forhör' ? 'Skriv ditt svar...' : 'Skriv din fråga...'}
+              disabled={sending || (mode === 'forhör' && quizDone)}
               autoFocus
               className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-sm md:text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             />
             <button
               type="submit"
-              disabled={sending || !input.trim() || (mode === 'quiz' && quizDone)}
+              disabled={sending || !input.trim() || (mode === 'forhör' && quizDone)}
               className={`text-white px-5 py-3 rounded-xl text-sm md:text-lg font-medium disabled:opacity-50 transition-colors ${
-                mode === 'quiz' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'
+                mode === 'forhör' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'
               }`}
             >
               Skicka

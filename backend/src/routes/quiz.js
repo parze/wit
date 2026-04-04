@@ -76,8 +76,6 @@ router.post('/:id/quiz/questions', authMiddleware, requireRole('teacher'), async
 // POST /api/courses/:id/quiz/generate - generate quiz questions with AI (teacher)
 router.post('/:id/quiz/generate', authMiddleware, requireRole('teacher'), async (req, res) => {
   const { id } = req.params;
-  let count = parseInt(req.body.count) || 5;
-  count = Math.max(1, Math.min(20, count));
 
   try {
     const course = await db('courses').where({ id }).first();
@@ -96,10 +94,18 @@ router.post('/:id/quiz/generate', authMiddleware, requireRole('teacher'), async 
       return res.status(400).json({ error: 'No content available to generate questions from' });
     }
 
+    const toc = Array.isArray(course.compiled_toc)
+      ? course.compiled_toc
+      : (course.compiled_toc ? JSON.parse(course.compiled_toc) : []);
+
+    const momentList = toc.length > 0
+      ? `\nMomenten är:\n${toc.map((m, i) => `${i + 1}. ${m}`).join('\n')}`
+      : '';
+
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
-      system: `Du är en pedagogisk assistent. Generera exakt ${count} quiz-frågor baserade på kursmaterialet nedan. Svara BARA med en JSON-array i formatet: [{"question": "...", "options": ["alt1", "alt2", "alt3", "alt4"], "correct_index": 0}]. Inga andra kommentarer.`,
+      max_tokens: 4000,
+      system: `Du är en pedagogisk assistent. Generera quiz-frågor baserade på kursmaterialet nedan.${momentList}\n\nRegler:\n- Täck alla Moment i ordning\n- Bestäm själv hur många frågor varje Moment behöver (1–5) baserat på innehållets komplexitet och djup\n- Täck de viktigaste kunskaperna i varje Moment\n- Svara BARA med en JSON-array i formatet: [{"question": "...", "options": ["alt1", "alt2", "alt3", "alt4"], "correct_index": 0}]. Inga andra kommentarer.`,
       messages: [{ role: 'user', content: context }],
     });
 

@@ -2,6 +2,7 @@ const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const db = require('../db');
 const { authMiddleware, requireRole } = require('../middleware/auth');
+const logger = require('../logger');
 
 const router = express.Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -19,7 +20,7 @@ router.post('/:courseId', authMiddleware, async (req, res) => {
 
   try {
     const t0 = Date.now();
-    const lap = (label) => process.stderr.write(`[chat] ${label}: ${Date.now() - t0}ms\n`);
+    const lap = (label) => logger.debug(`[chat] ${label}: ${Date.now() - t0}ms`);
 
     const course = await db('courses').where({ id: courseId }).first();
     lap('db: course');
@@ -54,18 +55,19 @@ router.post('/:courseId', authMiddleware, async (req, res) => {
       lap('db: documents (no compiled_material)');
     }
 
-    process.stderr.write(`[chat] system prompt length: ${courseMaterial?.length ?? 0} chars\n`);
+    logger.debug(`[chat] system prompt length: ${courseMaterial?.length ?? 0} chars`);
 
     const BASE_CHAT_PROMPT = `Du är en hjälpsam AI-lärare. Svara på elevens frågor baserat ENBART på kursmaterialet nedan. Om eleven frågar om något som inte finns i kursmaterialet, vägled dem tillbaka till ämnet på ett vänligt sätt.`;
 
     const DEFAULT_QUIZ_PROMPT = `Du är en provledare som testar elevens kunskaper om kursmaterialet. Svara ENBART baserat på kursmaterialet nedan.
 
 Regler:
-- Ställ EN fråga i taget om det angivna Momentet
+- Ställ 1–5 frågor per Moment baserat på innehållets komplexitet och djup – täck de viktigaste kunskaperna
 - Variera frågetyper: faktafrågor, förståelsefrågor och tillämpningsfrågor
-- Eleven har EN chans att svara – inga följdfrågor eller ledtrådar
-- När eleven svarat: ge kortfattad feedback och skriv [QUIZ_POÄNG:X.XX] på en EGEN rad allra sist (0.0=helt fel, 0.5=delvis rätt, 1.0=perfekt)
-- Skriv ALDRIG [QUIZ_POÄNG] i samma svar som du ställer en ny fråga
+- Eleven har EN chans att svara per fråga – inga följdfrågor eller ledtrådar
+- Efter varje svar om du ska ställa FLER frågor om SAMMA Moment: ge kortfattad feedback och skriv [QUIZ_POÄNG:X.XX] på en EGEN rad allra sist (0.0=helt fel, 0.5=delvis rätt, 1.0=perfekt)
+- När du anser att ett Moment är tillräckligt täckt: ge kortfattad feedback och skriv [MOMENT_SLUT:X.XX] på en EGEN rad allra sist (genomsnittet av Momentets alla delsvar), gå sedan direkt till nästa Moment
+- Skriv ALDRIG [QUIZ_POÄNG] eller [MOMENT_SLUT] i samma svar som du ställer en ny fråga
 - Håll en professionell men uppmuntrande ton`;
 
     let chatPrompt = BASE_CHAT_PROMPT;
@@ -83,8 +85,8 @@ Regler:
       ? course.compiled_toc
       : (course.compiled_toc ? JSON.parse(course.compiled_toc) : []);
 
-    // ── QUIZ MODE ────────────────────────────────────────────────────────────
-    if (req.body.mode === 'quiz') {
+    // ── FÖRHÖR MODE ──────────────────────────────────────────────────────────
+    if (req.body.mode === 'forhör') {
       const quizSystemPrompt = `${quizPrompt}\n\n--- KURSMATERIAL ---\n${courseMaterial}\n--------------------`;
 
       const existingSession = await db('chat_sessions')
@@ -92,14 +94,13 @@ Regler:
         .first();
       lap('db: quiz_session');
 
-      const quizMessages = existingSession?.quiz_messages || [];
+      const quizMessages = (existingSession?.quiz_messages || []).filter(m => m.role !== 'meta');
 
-      const quizSummary = !isTeacher
-        ? await db('ai_summaries')
-            .where({ student_id: req.user.id, course_id: courseId })
-            .select('quiz_answered_sections', 'quiz_score')
-            .first()
-        : null;
+      // Read answered sections from DB for everyone (teachers included, cleared on reset)
+      const quizSummary = await db('ai_summaries')
+        .where({ student_id: req.user.id, course_id: courseId })
+        .select('quiz_answered_sections', 'quiz_score')
+        .first();
       lap('db: quiz_summary');
 
       const answeredSections = Array.isArray(quizSummary?.quiz_answered_sections)
@@ -114,7 +115,7 @@ Regler:
       // Build message list for this turn
       const msgs = [...quizMessages];
       if (intro) {
-        msgs.push({ role: 'user', content: `[Quizintro: Presentera att detta är ett prov om "${course.title}". Eleven får en fråga per Moment och har en chans att svara. Skriv INTE [QUIZ_POÄNG] i detta svar. Ställ direkt den första frågan om Moment "${currentMoment}".]` });
+        msgs.push({ role: 'user', content: `[Förhörsintro: Presentera att detta är ett förhör om "${course.title}". AI:n ställer tillräckligt många frågor per Moment för att täcka hela materialet. Skriv INTE [QUIZ_POÄNG] eller [MOMENT_SLUT] i detta svar. Ställ direkt den första frågan om Moment "${currentMoment}".]` });
       } else {
         msgs.push({ role: 'user', content: message.trim() });
       }
@@ -123,7 +124,7 @@ Regler:
 
       const sonnetMsgs = (currentMoment && !intro)
         ? [
-            { role: 'user', content: `[Quizkontext: Eleven svarade nu på frågan om Moment "${currentMoment}". Ge feedback och skriv [QUIZ_POÄNG:X.XX] på en EGEN rad allra sist (0.0=helt fel, 1.0=perfekt). ${nextMoment ? `Ställ sedan direkt nästa fråga om Moment "${nextMoment}".` : 'Alla Moment är nu besvarade – avsluta provet och sammanfatta elevens totalpoäng.'}]` },
+            { role: 'user', content: `[Förhörskontext: Eleven svarade nu på en fråga om Moment "${currentMoment}". Ge feedback och skriv antingen [QUIZ_POÄNG:X.XX] om du vill ställa fler frågor om samma Moment, eller [MOMENT_SLUT:X.XX] om Momentet är tillräckligt täckt (0.0=helt fel, 0.5=delvis, 1.0=perfekt). ${nextMoment ? `Vid [MOMENT_SLUT]: gå direkt till Moment "${nextMoment}".` : 'Vid [MOMENT_SLUT]: alla Moment klara – avsluta förhöret och sammanfatta totalpoängen.'}]` },
             { role: 'assistant', content: 'Förstått.' },
             ...trimmedMsgs,
           ]
@@ -135,11 +136,14 @@ Regler:
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no');
 
-      // Stream with marker buffer (marker max ~20 chars: [QUIZ_POÄNG:0.00])
+      // Buffer long enough for both markers ([MOMENT_SLUT:0.00] = 16 chars)
       const QUIZ_MARKER_RE = /\[QUIZ_POÄNG:([\d.]+)\]/;
-      const QUIZ_BUF_LEN = 20;
+      const MOMENT_SLUT_RE = /\[MOMENT_SLUT:([\d.]+)\]/;
+      const MARKER_BUF_LEN = 20;
       let quizAssistantMsg = '';
       let quizStreamBuf = '';
+
+      logger.info({ msgs: sonnetMsgs }, '[forhör:sent]');
 
       const quizStream = anthropic.messages.stream({
         model: 'claude-sonnet-4-6',
@@ -152,22 +156,30 @@ Regler:
         if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
           quizAssistantMsg += chunk.delta.text;
           quizStreamBuf += chunk.delta.text;
-          if (quizStreamBuf.length > QUIZ_BUF_LEN) {
-            res.write(`data: ${JSON.stringify({ text: quizStreamBuf.slice(0, -QUIZ_BUF_LEN) })}\n\n`);
-            quizStreamBuf = quizStreamBuf.slice(-QUIZ_BUF_LEN);
+          if (quizStreamBuf.length > MARKER_BUF_LEN) {
+            res.write(`data: ${JSON.stringify({ text: quizStreamBuf.slice(0, -MARKER_BUF_LEN) })}\n\n`);
+            quizStreamBuf = quizStreamBuf.slice(-MARKER_BUF_LEN);
           }
         }
       }
-      const quizRemainder = quizStreamBuf.replace(QUIZ_MARKER_RE, '').trimEnd();
+      const quizRemainder = quizStreamBuf.replace(QUIZ_MARKER_RE, '').replace(MOMENT_SLUT_RE, '').trimEnd();
       if (quizRemainder) res.write(`data: ${JSON.stringify({ text: quizRemainder })}\n\n`);
 
-      // Parse score and clean message
-      const scoreMatch = quizAssistantMsg.match(QUIZ_MARKER_RE);
-      const questionScore = scoreMatch ? Math.min(1, Math.max(0, parseFloat(scoreMatch[1]))) : null;
-      const cleanedQuizMsg = quizAssistantMsg.replace(QUIZ_MARKER_RE, '').trimEnd();
+      logger.info({ msg: quizAssistantMsg }, '[forhör:received]');
+
+      // Parse markers and clean message
+      const momentSlutMatch = quizAssistantMsg.match(MOMENT_SLUT_RE);
+      const momentSlutScore = momentSlutMatch ? Math.min(1, Math.max(0, parseFloat(momentSlutMatch[1]))) : null;
+      const cleanedQuizMsg = quizAssistantMsg.replace(QUIZ_MARKER_RE, '').replace(MOMENT_SLUT_RE, '').trimEnd();
 
       if (intro) msgs.pop();
       msgs.push({ role: 'assistant', content: cleanedQuizMsg });
+
+      // Advance to next moment only when AI signals [MOMENT_SLUT]
+      let newAnsweredSections = [...answeredSections];
+      if (momentSlutScore !== null && currentMoment && !answeredMoments.includes(currentMoment)) {
+        newAnsweredSections = [...answeredSections, { moment: currentMoment, score: momentSlutScore }];
+      }
 
       // Save quiz_messages
       if (existingSession) {
@@ -191,54 +203,47 @@ Regler:
 
       (async () => {
         try {
-          let newAnswered = answeredSections;
-          if (!isTeacher && questionScore !== null && currentMoment && !answeredMoments.includes(currentMoment)) {
-            newAnswered = [...answeredSections, { moment: currentMoment, score: questionScore }];
-          }
-
           const totalScore = toc.length > 0
-            ? Math.round(newAnswered.reduce((s, a) => s + a.score, 0) / toc.length * 100)
+            ? Math.round(newAnsweredSections.reduce((s, a) => s + a.score, 0) / toc.length * 100)
             : 0;
 
-          const nextUnanswered = toc.find((m) => !newAnswered.map((a) => a.moment).includes(m)) || null;
+          const nextUnanswered = toc.find((m) => !newAnsweredSections.map((a) => a.moment).includes(m)) || null;
 
-          if (!isTeacher) {
-            const existingSummary = await db('ai_summaries')
+          const existingSummary = await db('ai_summaries')
+            .where({ student_id: studentId, course_id: courseId })
+            .first();
+
+          const summaryPatch = {
+            quiz_score: totalScore,
+            quiz_answered_sections: JSON.stringify(newAnsweredSections),
+          };
+
+          if (existingSummary) {
+            await db('ai_summaries')
               .where({ student_id: studentId, course_id: courseId })
-              .first();
-
-            const summaryPatch = {
-              quiz_score: totalScore,
-              quiz_answered_sections: JSON.stringify(newAnswered),
-            };
-
-            if (existingSummary) {
-              await db('ai_summaries')
-                .where({ student_id: studentId, course_id: courseId })
-                .update({ ...summaryPatch, updated_at: db.fn.now() });
-            } else {
-              await db('ai_summaries').insert({
-                student_id: studentId,
-                course_id: courseId,
-                summary: '',
-                goal_achievement: 0,
-                reasons: '',
-                current_section: toc[0] || '',
-                completed_sections: JSON.stringify([]),
-                ...summaryPatch,
-              });
-            }
-
-            io.to(`student:${studentId}`).emit('quiz_progress', {
-              quizScore: totalScore,
-              quizAnsweredSections: newAnswered,
-              currentQuestion: nextUnanswered,
-              totalQuestions: toc.length,
-              toc,
+              .update({ ...summaryPatch, updated_at: db.fn.now() });
+          } else {
+            await db('ai_summaries').insert({
+              student_id: studentId,
+              course_id: courseId,
+              summary: '',
+              goal_achievement: 0,
+              reasons: '',
+              current_section: toc[0] || '',
+              completed_sections: JSON.stringify([]),
+              ...summaryPatch,
             });
           }
+
+          io.to(`student:${studentId}`).emit('quiz_progress', {
+            quizScore: totalScore,
+            quizAnsweredSections: newAnsweredSections,
+            currentQuestion: nextUnanswered,
+            totalQuestions: toc.length,
+            toc,
+          });
         } catch (quizErr) {
-          console.error('Quiz progress error:', quizErr);
+          logger.error({ err: quizErr }, 'Quiz progress error');
         } finally {
           res.end();
         }
@@ -246,9 +251,10 @@ Regler:
 
       return;
     }
-    // ── END QUIZ MODE ────────────────────────────────────────────────────────
+    // ── END FÖRHÖR MODE ──────────────────────────────────────────────────────
 
     const systemPrompt = `${chatPrompt}\n\n--- KURSMATERIAL ---\n${courseMaterial}\n--------------------`;
+    logger.info({ systemPrompt: systemPrompt?.substring(0, 1000) }, '[chat] system prompt');
 
     // Load existing chat session or start fresh
     const existingSession = await db('chat_sessions')
@@ -303,6 +309,8 @@ Regler:
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
 
+    logger.info({ msgs: sonnetMessages }, '[lär:sent]');
+
     // Stream Claude response
     const claudeStart = Date.now();
     const stream = anthropic.messages.stream({
@@ -333,9 +341,11 @@ Regler:
       res.write(`data: ${JSON.stringify({ text: bufferedRemainder })}\n\n`);
     }
 
+    logger.info({ msg: assistantMessage }, '[lär:received]');
+
     const final = await stream.finalMessage();
     const u = final.usage;
-    process.stderr.write(`[chat] claude: ${Date.now() - claudeStart}ms (in: ${u?.input_tokens}, out: ${u?.output_tokens}, cache_read: ${u?.cache_read_input_tokens ?? 0}, cache_write: ${u?.cache_creation_input_tokens ?? 0})\n`);
+    logger.debug({ in: u?.input_tokens, out: u?.output_tokens, cache_read: u?.cache_read_input_tokens ?? 0, cache_write: u?.cache_creation_input_tokens ?? 0, ms: Date.now() - claudeStart }, '[chat] claude tokens');
 
     // Strip [MOMENT_KLAR] marker – never saved to DB or shown to student
     const momentComplete = assistantMessage.includes(MARKER);
@@ -383,11 +393,10 @@ Regler:
 
     lap('TOTAL (before response)');
 
-    res.write(`data: ${JSON.stringify({ done: true, messages })}\n\n`);
-
-    // Run TOC advancement + quick replies async, emit results via socket.io when done
+    // Run TOC advancement async on the still-open SSE connection
     const studentId = req.user.id;
     const io = req.app.get('io');
+    const isLastMoment = currentMomentIndex >= 0 && currentMomentIndex === toc.length - 1;
 
     (async () => {
       try {
@@ -439,30 +448,121 @@ Regler:
           toc,
         });
 
-        // Quick replies (Haiku) – independent of Moment analysis
-        const quickRepliesPromise = (enableQuickReplies && !intro)
-          ? anthropic.messages.create({
-              model: 'claude-haiku-4-5-20251001',
-              max_tokens: 256,
-              messages: [
-                {
+        if (momentComplete && !isLastMoment) {
+          // Auto-advance: stream intro to next Moment on the same SSE connection
+          res.write(`data: ${JSON.stringify({ newMessage: true })}\n\n`);
+
+          const advancePrompt = `[Momentövergång: Moment "${currentMoment}" klart. Presentera nästa Moment "${newCurrentSection}" med 2–3 meningar intro + inbjudande fråga. Skriv INTE [MOMENT_KLAR].]`;
+          const advanceMessages = [...messages, { role: 'user', content: advancePrompt }];
+          const trimmedAdvance = advanceMessages.length > 20 ? advanceMessages.slice(-20) : advanceMessages;
+
+          const advanceStream = anthropic.messages.stream({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 512,
+            system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+            messages: trimmedAdvance,
+          });
+
+          let advanceMsg = '';
+          for await (const chunk of advanceStream) {
+            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+              advanceMsg += chunk.delta.text;
+              res.write(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`);
+            }
+          }
+
+          messages.push({ role: 'assistant', content: advanceMsg });
+
+          await db('chat_sessions')
+            .where({ student_id: studentId, course_id: courseId })
+            .update({ messages: JSON.stringify(messages), updated_at: db.fn.now() });
+
+          res.write(`data: ${JSON.stringify({ done: true, messages })}\n\n`);
+
+          // Generate quick replies for the advance intro (same logic as normal turn)
+          if (enableQuickReplies) {
+            const escapedName = newCurrentSection.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const momentIdx = toc.indexOf(newCurrentSection);
+            const nextName = toc[momentIdx + 1];
+            let pattern;
+            if (nextName) {
+              const escapedNext = nextName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              pattern = new RegExp(`^## ${escapedName}$[\\s\\S]*?(?=^## ${escapedNext}$)`, 'm');
+            } else {
+              pattern = new RegExp(`^## ${escapedName}$[\\s\\S]*$`, 'm');
+            }
+            const momentMatch = courseMaterial?.match(pattern);
+            const momentContent = momentMatch ? momentMatch[0] : '';
+
+            try {
+              const r = await anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 256,
+                messages: [{
                   role: 'user',
-                  content: `AI-läraren ställde en fråga till eleven nedan. Ge exakt 3 svarsalternativ på svenska:\n1. Ett helt korrekt svar\n2. Ett nästan korrekt svar (delvis rätt men innehåller ett vanligt missförstånd)\n3. Ett felaktigt svar\n\nAlternativen ska vara korta (max 10 ord), blandade i slumpmässig ordning så eleven inte vet vilket som är rätt. Returnera ENDAST en JSON-array med 3 strings, inga förklaringar.\n\nAI:ns fråga: ${cleanedMessage}`,
-                },
-              ],
-            }).then(r => {
+                  content: `AI-läraren undervisar om följande Moment:\n\n${momentContent || advanceMsg}\n\nAI:ns senaste fråga till eleven:\n${advanceMsg}\n\nGe exakt 2 svarsalternativ på svenska:\n1. Ett korrekt svar baserat på Moment-innehållet\n2. Ett felaktigt svar\n\nAlternativen ska vara korta (max 10 ord), blandade i slumpmässig ordning så eleven inte vet vilket som är rätt. Returnera ENDAST en JSON-array med 2 strings, inga förklaringar.`,
+                }],
+              });
               const text = r.content[0].text.trim();
               const match = text.match(/\[[\s\S]*\]/);
-              return match ? JSON.parse(match[0]) : [];
-            }).catch(() => [])
-          : Promise.resolve(null); // null = feature off, don't emit
+              const quickReplies = match ? JSON.parse(match[0]) : [];
+              io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
+            } catch {
+              // quick replies are non-critical
+            }
+          }
 
-        const quickReplies = await quickRepliesPromise;
-        if (quickReplies !== null) {
-          io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
+        } else if (momentComplete && isLastMoment) {
+          // Last Moment completed – course done
+          io.to(`student:${studentId}`).emit('course_complete', { courseId });
+          res.write(`data: ${JSON.stringify({ done: true, messages })}\n\n`);
+
+        } else {
+          // Normal turn: generate quick replies via Haiku
+          const momentForReplies = newCurrentSection || currentMoment;
+          const momentContent = (() => {
+            if (!momentForReplies || !courseMaterial) return '';
+            const escapedName = momentForReplies.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const momentIdx = toc.indexOf(momentForReplies);
+            const nextName = toc[momentIdx + 1];
+            let pattern;
+            if (nextName) {
+              const escapedNext = nextName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              pattern = new RegExp(`^## ${escapedName}$[\\s\\S]*?(?=^## ${escapedNext}$)`, 'm');
+            } else {
+              pattern = new RegExp(`^## ${escapedName}$[\\s\\S]*$`, 'm');
+            }
+            const m = courseMaterial.match(pattern);
+            return m ? m[0] : '';
+          })();
+
+          const quickRepliesPromise = (enableQuickReplies)
+            ? anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 256,
+                messages: [
+                  {
+                    role: 'user',
+                    content: `AI-läraren undervisar om följande Moment:\n\n${momentContent || cleanedMessage}\n\nAI:ns senaste fråga till eleven:\n${cleanedMessage}\n\nGe exakt 2 svarsalternativ på svenska:\n1. Ett korrekt svar baserat på Moment-innehållet\n2. Ett felaktigt svar\n\nAlternativen ska vara korta (max 10 ord), blandade i slumpmässig ordning så eleven inte vet vilket som är rätt. Returnera ENDAST en JSON-array med 2 strings, inga förklaringar.`,
+                  },
+                ],
+              }).then(r => {
+                const text = r.content[0].text.trim();
+                const match = text.match(/\[[\s\S]*\]/);
+                return match ? JSON.parse(match[0]) : [];
+              }).catch(() => [])
+            : Promise.resolve(null); // null = feature off, don't emit
+
+          const quickReplies = await quickRepliesPromise;
+          if (quickReplies !== null) {
+            io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
+          }
+
+          res.write(`data: ${JSON.stringify({ done: true, messages })}\n\n`);
         }
       } catch (analysisErr) {
-        console.error('Analysis error:', analysisErr);
+        logger.error({ err: analysisErr }, 'Analysis error');
+        res.write(`data: ${JSON.stringify({ done: true, messages })}\n\n`);
       } finally {
         res.end();
       }
@@ -470,7 +570,7 @@ Regler:
 
     return;
   } catch (err) {
-    console.error('Chat error:', err);
+    logger.error({ err }, 'Chat error');
     if (!res.headersSent) {
       return res.status(500).json({ error: 'Internal server error' });
     }

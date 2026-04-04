@@ -280,7 +280,7 @@ router.get('/:id/quiz-session', authMiddleware, requireRole('teacher'), async (r
       db('ai_summaries').where({ student_id: req.user.id, course_id: id }).first(),
     ]);
     res.json({
-      quizMessages: session?.quiz_messages || [],
+      quizMessages: (session?.quiz_messages || []).filter(m => m.role !== 'meta'),
       quizAnsweredSections: aiSummary?.quiz_answered_sections || [],
       quizScore: aiSummary?.quiz_score ?? null,
     });

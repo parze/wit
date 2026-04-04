@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const logger = require('./src/logger');
 
 const authRoutes = require('./src/routes/auth');
 const coursesRoutes = require('./src/routes/courses');
@@ -108,13 +109,13 @@ app.use((req, res) => {
 
 // Error handler
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
+  logger.error({ err }, 'Unhandled error');
   res.status(500).json({ error: err.message || 'Internal server error' });
 });
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`Lärmig backend running on port ${PORT}`);
+  logger.info(`Lärmig backend running on port ${PORT}`);
 });
 
 module.exports = app;

@@ -23,7 +23,7 @@ export default function CourseEditorPage() {
   const [compiledAt, setCompiledAt] = useState(null);
 
   // AI quiz generation
-  const [generateCount, setGenerateCount] = useState(5);
+  const [toc, setToc] = useState([]);
   const [generating, setGenerating] = useState(false);
 
   // Quiz
@@ -55,6 +55,7 @@ export default function CourseEditorPage() {
       setCourse(data);
       setSelectedInstructionId(data.instruction_id ? String(data.instruction_id) : '');
       setCompiledMaterial(data.compiled_material ?? null);
+      setToc(Array.isArray(data.compiled_toc) ? data.compiled_toc : []);
       setEnableQuickReplies(data.enable_quick_replies ?? false);
     } catch {
       setError('Kunde inte hämta arbetsområde');
@@ -159,10 +160,7 @@ export default function CourseEditorPage() {
   const generateQuizQuestions = async () => {
     setGenerating(true);
     try {
-      const { data } = await api.post(
-        `/courses/${id}/quiz/generate`,
-        { count: generateCount }
-      );
+      const { data } = await api.post(`/courses/${id}/quiz/generate`, {});
       setQuizQuestions(q => [...q, ...data]);
     } catch (err) {
       setError(err.response?.data?.error || 'AI-generering misslyckades');
@@ -388,10 +386,10 @@ export default function CourseEditorPage() {
                   Lär mig
                 </button>
                 <button
-                  onClick={() => navigate(`/teacher/courses/${id}/test-chat?mode=quiz`)}
+                  onClick={() => navigate(`/teacher/courses/${id}/test-chat?mode=forhör`)}
                   className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
                 >
-                  Quiza mig
+                  Förhör mig
                 </button>
                 <button
                   onClick={clearTestSession}
@@ -439,15 +437,12 @@ export default function CourseEditorPage() {
           {/* AI generation */}
           <div className="border border-purple-200 bg-purple-50 rounded-lg p-4 mb-4">
             <p className="text-sm font-medium text-purple-800 mb-2">Generera frågor med AI</p>
+            {toc.length > 0 && (
+              <p className="text-xs text-purple-600 mb-2">
+                Täcker alla {toc.length} Moment – AI bestämmer antal (1–5) per Moment baserat på komplexitet
+              </p>
+            )}
             <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={generateCount}
-                onChange={e => setGenerateCount(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
-                className="w-16 border border-purple-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-400"
-              />
               <button
                 type="button"
                 onClick={generateQuizQuestions}
