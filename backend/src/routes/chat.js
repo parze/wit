@@ -177,12 +177,18 @@ Regler:
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no');
 
+      const io = req.app.get('io');
+      const studentId = req.user.id;
+
       // Buffer long enough for both markers ([MOMENT_SLUT:0.00] = 16 chars)
       const QUIZ_MARKER_RE = /\[QUIZ_POÄNG:([\d.]+)\]/;
       const MOMENT_SLUT_RE = /\[MOMENT_SLUT:([\d.]+)\]/;
       const MARKER_BUF_LEN = 20;
       let quizAssistantMsg = '';
       let quizStreamBuf = '';
+      let ttsQuizBuf = '';
+      let ttsQuizSeq = 0;
+      const quizSentRe = /^([\s\S]*?[.!?])(\s+)/;
 
       logger.info({ msgs: sonnetMsgs }, '[forhör:sent]');
 
@@ -197,14 +203,24 @@ Regler:
         if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
           quizAssistantMsg += chunk.delta.text;
           quizStreamBuf += chunk.delta.text;
+          ttsQuizBuf += chunk.delta.text;
           if (quizStreamBuf.length > MARKER_BUF_LEN) {
             res.write(`data: ${JSON.stringify({ text: quizStreamBuf.slice(0, -MARKER_BUF_LEN) })}\n\n`);
             quizStreamBuf = quizStreamBuf.slice(-MARKER_BUF_LEN);
+          }
+          let quizSentMatch;
+          while ((quizSentMatch = quizSentRe.exec(ttsQuizBuf)) !== null) {
+            const sentence = quizSentMatch[1];
+            ttsQuizBuf = ttsQuizBuf.slice(quizSentMatch[0].length);
+            emitChatTTS(io, studentId, sentence, ttsQuizSeq++).catch(() => {});
           }
         }
       }
       const quizRemainder = quizStreamBuf.replace(QUIZ_MARKER_RE, '').replace(MOMENT_SLUT_RE, '').trimEnd();
       if (quizRemainder) res.write(`data: ${JSON.stringify({ text: quizRemainder })}\n\n`);
+      const ttsQuizRemainder = ttsQuizBuf.replace(QUIZ_MARKER_RE, '').replace(MOMENT_SLUT_RE, '').trim();
+      if (ttsQuizRemainder) emitChatTTS(io, studentId, ttsQuizRemainder, ttsQuizSeq++).catch(() => {});
+      io.to(`student:${studentId}`).emit('chat_tts_done');
 
       logger.info({ msg: quizAssistantMsg }, '[forhör:received]');
 
@@ -238,9 +254,6 @@ Regler:
       lap('db: save quiz_session');
 
       res.write(`data: ${JSON.stringify({ done: true, quizMessages: msgs })}\n\n`);
-
-      const studentId = req.user.id;
-      const io = req.app.get('io');
 
       (async () => {
         try {
