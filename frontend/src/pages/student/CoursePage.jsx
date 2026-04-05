@@ -33,6 +33,7 @@ export default function CoursePage() {
   const [error, setError] = useState('');
   const messagesEndRef = useRef(null);
   const lastAssistantRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
 
   // TTS state
@@ -90,6 +91,27 @@ export default function CoursePage() {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, quizMessages, mode]);
+
+  // Re-scroll when quick replies appear – scroll down as far as possible
+  // but not so far that the last assistant message's top goes off-screen
+  useEffect(() => {
+    if (quickReplies.length > 0) {
+      const container = messagesContainerRef.current;
+      const lastAssistant = lastAssistantRef.current;
+      if (!container) return;
+
+      if (lastAssistant) {
+        const containerRect = container.getBoundingClientRect();
+        const lastMsgRect = lastAssistant.getBoundingClientRect();
+        const distFromTop = lastMsgRect.top - containerRect.top;
+        const scrollToBottom = container.scrollHeight - container.clientHeight - container.scrollTop;
+        const scrollAmount = Math.min(scrollToBottom, Math.max(0, distFromTop));
+        container.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+      } else {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  }, [quickReplies]);
 
   // Trigger quiz intro when switching to quiz tab for the first time
   useEffect(() => {
@@ -208,7 +230,11 @@ export default function CoursePage() {
               });
             }
           } else if (payload.newMessage) {
-            setMessages(m => [...m, { role: 'assistant', content: '' }]);
+            if (isQuiz) {
+              setQuizMessages(m => [...m, { role: 'assistant', content: '' }]);
+            } else {
+              setMessages(m => [...m, { role: 'assistant', content: '' }]);
+            }
           } else if (payload.done) {
             if (isQuiz) {
               setQuizMessages(payload.quizMessages);
@@ -419,7 +445,7 @@ export default function CoursePage() {
 
         {/* Chat */}
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
             {activeMessages.map((msg, i) => (
               <div
                 key={i}

@@ -75,7 +75,7 @@ Regler:
 - Variera frågetyper: faktafrågor, förståelsefrågor och tillämpningsfrågor
 - Eleven har EN chans att svara per fråga – inga följdfrågor eller ledtrådar
 - Efter varje svar om du ska ställa FLER frågor om SAMMA Moment: ge kortfattad feedback och skriv [QUIZ_POÄNG:X.XX] på en EGEN rad allra sist (0.0=helt fel, 0.5=delvis rätt, 1.0=perfekt)
-- När du anser att ett Moment är tillräckligt täckt: ge kortfattad feedback och skriv [MOMENT_SLUT:X.XX] på en EGEN rad allra sist (genomsnittet av Momentets alla delsvar), gå sedan direkt till nästa Moment
+- När du anser att ett Moment är tillräckligt täckt: ge kortfattad feedback och skriv [MOMENT_SLUT:X.XX] på en EGEN rad allra sist (genomsnittet av Momentets alla delsvar) – avsluta direkt, inga fler frågor (övergången sköts automatiskt)
 - Skriv ALDRIG [QUIZ_POÄNG] eller [MOMENT_SLUT] i samma svar som du ställer en ny fråga
 - Håll en professionell men uppmuntrande ton`;
 
@@ -135,7 +135,7 @@ Regler:
 
       const sonnetMsgs = (currentMoment && !intro)
         ? [
-            { role: 'user', content: `[Förhörskontext: Eleven svarade nu på en fråga om Moment "${currentMoment}".${contentBlock}\nGe feedback och skriv antingen [QUIZ_POÄNG:X.XX] om du vill ställa fler frågor om samma Moment, eller [MOMENT_SLUT:X.XX] om Momentet är tillräckligt täckt (0.0=helt fel, 0.5=delvis, 1.0=perfekt). ${nextMoment ? `Vid [MOMENT_SLUT]: gå direkt till Moment "${nextMoment}".` : 'Vid [MOMENT_SLUT]: alla Moment klara – avsluta förhöret och sammanfatta totalpoängen.'}]` },
+            { role: 'user', content: `[Förhörskontext: Eleven svarade nu på en fråga om Moment "${currentMoment}".${contentBlock}\nGe feedback och skriv antingen [QUIZ_POÄNG:X.XX] om du vill ställa fler frågor om samma Moment, eller [MOMENT_SLUT:X.XX] om Momentet är tillräckligt täckt (0.0=helt fel, 0.5=delvis, 1.0=perfekt). ${nextMoment ? 'Vid [MOMENT_SLUT]: skriv ENBART kortfattad feedback + [MOMENT_SLUT] – övergången sköts automatiskt.' : 'Vid [MOMENT_SLUT]: alla Moment klara – avsluta förhöret och sammanfatta totalpoängen.'}]` },
             { role: 'assistant', content: 'Förstått.' },
             ...trimmedMsgs,
           ]
@@ -158,7 +158,7 @@ Regler:
         messages: sonnetMsgs,
       });
 
-      const { fullText: quizAssistantMsg } = await streamWithMarkerAndTTS({
+      const { fullText: quizAssistantMsg, ttsSeq: ttsSeqAfterMain } = await streamWithMarkerAndTTS({
         stream: quizStream,
         res,
         io,
@@ -190,8 +190,6 @@ Regler:
       await upsertChatSession(db, req.user.id, courseId, 'quiz_messages', msgs, existingSession, { messages: JSON.stringify([]) });
       lap('db: save quiz_session');
 
-      res.write(`data: ${JSON.stringify({ done: true, quizMessages: msgs })}\n\n`);
-
       (async () => {
         try {
           const totalScore = toc.length > 0
@@ -219,13 +217,58 @@ Regler:
             toc,
           });
 
-          if (nextUnanswered !== null && enableQuickReplies) {
-            const momentContent = getMomentContent(courseMaterial, nextUnanswered, toc);
-            const quickReplies = await generateQuickReplies(anthropic, momentContent, cleanedQuizMsg, 5);
-            io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
+          if (momentSlutScore !== null && nextUnanswered !== null) {
+            // Auto-advance: stream intro to next Moment on the same SSE connection
+            res.write(`data: ${JSON.stringify({ newMessage: true })}\n\n`);
+
+            const advancePrompt = `[Momentövergång: Moment "${currentMoment}" klart. Presentera kort Moment "${nextUnanswered}" och ställ direkt den FÖRSTA frågan. Skriv INTE [QUIZ_POÄNG] eller [MOMENT_SLUT].]`;
+            const advanceMsgs = [...msgs, { role: 'user', content: advancePrompt }];
+            const trimmedAdvance = advanceMsgs.length > 20 ? advanceMsgs.slice(-20) : advanceMsgs;
+
+            const advanceStream = anthropic.messages.stream({
+              model: 'claude-sonnet-4-6',
+              max_tokens: 512,
+              system: [{ type: 'text', text: quizSystemPrompt, cache_control: { type: 'ephemeral' } }],
+              messages: trimmedAdvance,
+            });
+
+            const { fullText: advanceMsg } = await streamWithMarkerAndTTS({
+              stream: advanceStream,
+              res,
+              io,
+              studentId,
+              markerBufLen: 0,
+              stripRe: null,
+              startSeq: ttsSeqAfterMain,
+              label: 'förhör-advance',
+            });
+            io.to(`student:${studentId}`).emit('chat_tts_done');
+
+            msgs.push({ role: 'assistant', content: advanceMsg });
+
+            await db('chat_sessions')
+              .where({ student_id: studentId, course_id: courseId })
+              .update({ quiz_messages: JSON.stringify(msgs), updated_at: db.fn.now() });
+
+            res.write(`data: ${JSON.stringify({ done: true, quizMessages: msgs })}\n\n`);
+
+            if (enableQuickReplies) {
+              const momentContent = getMomentContent(courseMaterial, nextUnanswered, toc);
+              const quickReplies = await generateQuickReplies(anthropic, momentContent, advanceMsg, 5);
+              io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
+            }
+          } else {
+            res.write(`data: ${JSON.stringify({ done: true, quizMessages: msgs })}\n\n`);
+
+            if (nextUnanswered !== null && enableQuickReplies) {
+              const momentContent = getMomentContent(courseMaterial, nextUnanswered, toc);
+              const quickReplies = await generateQuickReplies(anthropic, momentContent, cleanedQuizMsg, 5);
+              io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
+            }
           }
         } catch (quizErr) {
           logger.error({ err: quizErr }, 'Quiz progress error');
+          res.write(`data: ${JSON.stringify({ done: true, quizMessages: msgs })}\n\n`);
         } finally {
           res.end();
         }
@@ -281,7 +324,7 @@ Regler:
     // Prepend Moment context to messages sent to Sonnet (never saved to DB)
     const sonnetMessages = currentMoment
       ? [
-          { role: 'user', content: `[Momentkontext: Eleven arbetar nu med Moment "${currentMoment}".${learnContentBlock}\nUndervisa berättande och narrativt – förklara ett begrepp i taget med konkreta exempel och levande beskrivningar. Täck allt innehåll i Momentet. Avsluta ALLTID med en fråga om något du PRECIS beskrivit i detta svar (inte om något nytt eller framtida). Haiku genererar 2 svarsalternativ till din fråga – tänk på att frågan ska ha ett tydligt rätt och fel svar. När du har täckt det viktigaste innehållet, skriv exakt [MOMENT_KLAR] på en EGEN rad allra sist i ditt svar. Fråga INTE eleven om de vill fortsätta.${nextMoment ? ` Nästa Moment är "${nextMoment}".` : ''}]` },
+          { role: 'user', content: `[Momentkontext: Eleven arbetar nu med Moment "${currentMoment}".${learnContentBlock}\nUndervisa berättande och narrativt – förklara ett begrepp i taget med konkreta exempel och levande beskrivningar. Täck allt innehåll i Momentet. Avsluta ALLTID med en fråga om något du PRECIS beskrivit i detta svar (inte om något nytt eller framtida) – UTOM i det svar där du skriver [MOMENT_KLAR]: skriv då [MOMENT_KLAR] allra sist utan någon fråga efteråt. Haiku genererar 2 svarsalternativ till din fråga – tänk på att frågan ska ha ett tydligt rätt och fel svar. När du har täckt det viktigaste innehållet, skriv exakt [MOMENT_KLAR] på en EGEN rad allra sist i ditt svar. Fråga INTE eleven om de vill fortsätta.${nextMoment ? ` Nästa Moment är "${nextMoment}".` : ''}]` },
           { role: 'assistant', content: 'Förstått, jag fokuserar på detta Moment.' },
           ...trimmedMessages,
         ]
