@@ -63,6 +63,11 @@ export default function TestChatPage() {
       setLoading(false);
       if (existing.length === 0 && searchParams.get('mode') !== 'forhör') {
         await streamMessage({ intro: true });
+      } else if (existing.length > 0) {
+        const saved = sessionStorage.getItem(`quickReplies_${id}`);
+        if (saved) {
+          try { setQuickReplies(JSON.parse(saved)); } catch {}
+        }
       }
     }).catch(() => setLoading(false));
   }, [id]);
@@ -74,8 +79,14 @@ export default function TestChatPage() {
       setAiSummary({ goal_achievement: goalAchievement, summary, reasons, current_section: currentSection, completed_sections: completedSections });
       if (newToc?.length) setToc(newToc);
     });
-    socket.on('quick_replies', ({ quickReplies }) => {
-      setQuickReplies(quickReplies ?? []);
+    socket.on('quick_replies', ({ quickReplies: replies }) => {
+      const list = replies ?? [];
+      setQuickReplies(list);
+      if (list.length > 0) {
+        sessionStorage.setItem(`quickReplies_${id}`, JSON.stringify(list));
+      } else {
+        sessionStorage.removeItem(`quickReplies_${id}`);
+      }
     });
     socket.on('quiz_progress', ({ quizScore: qs, quizAnsweredSections: qas, toc: newToc }) => {
       setQuizScore(qs);
@@ -248,6 +259,7 @@ export default function TestChatPage() {
       await api.delete(`/courses/${id}/quiz-session`).catch(() => {});
       setMessages([]);
       setQuickReplies([]);
+      sessionStorage.removeItem(`quickReplies_${id}`);
       setGoalAchievement(null);
       setAiSummary(null);
       setQuizMessages([]);
@@ -269,12 +281,12 @@ export default function TestChatPage() {
     if (!input.trim() || sending) return;
     const msg = input.trim();
     setInput('');
+    setQuickReplies([]);
+    sessionStorage.removeItem(`quickReplies_${id}`);
     if (mode === 'forhör') {
-      setQuickReplies([]);
       setQuizMessages(m => [...m, { role: 'user', content: msg }]);
       await streamMessage({ message: msg, mode: 'forhör' });
     } else {
-      setQuickReplies([]);
       setMessages(m => [...m, { role: 'user', content: msg }]);
       await streamMessage({ message: msg });
     }
@@ -283,6 +295,7 @@ export default function TestChatPage() {
   const sendQuickReply = async (reply) => {
     if (sending) return;
     setQuickReplies([]);
+    sessionStorage.removeItem(`quickReplies_${id}`);
     if (mode === 'forhör') {
       setQuizMessages(m => [...m, { role: 'user', content: reply }]);
       await streamMessage({ message: reply, mode: 'forhör' });
