@@ -246,9 +246,12 @@ export default function CourseEditorPage() {
           </div>
         )}
 
-        {/* Instructions */}
+        {/* Steg 1 – Instruktion */}
         {instructions.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+            <div className="flex gap-4">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">1</div>
+            <div className="flex-1">
             <h3 className="font-semibold text-gray-900 mb-3">Instruktion</h3>
             <select
               value={selectedInstructionId}
@@ -272,15 +275,15 @@ export default function CourseEditorPage() {
               <span className="text-sm text-gray-700">Aktivera snabbsvar i chatten</span>
               <span className="text-xs text-gray-400">— AI föreslår svarsalternativ efter varje fråga</span>
             </label>
+            </div>
+            </div>
           </div>
         )}
 
-        {/* Documents – 3-stegs flöde */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 space-y-6">
-
-          {/* Steg 1 */}
+        {/* Steg 2 – Ladda upp läromedel */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">1</div>
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">2</div>
             <div className="flex-1">
               <h3 className="font-semibold text-gray-900 mb-3">Ladda upp läromedel</h3>
               {documents.length > 0 && (
@@ -317,10 +320,12 @@ export default function CourseEditorPage() {
               <p className="text-xs text-gray-400 mt-1">Stöder PDF, DOCX och TXT</p>
             </div>
           </div>
+        </div>
 
-          {/* Steg 2 */}
+        {/* Steg 3 – Förbered undervisningsmaterial */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">2</div>
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">3</div>
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-3">
                 <h3 className="font-semibold text-gray-900">Förbered undervisningsmaterial</h3>
@@ -337,82 +342,30 @@ export default function CourseEditorPage() {
               >
                 {compiling ? 'Förbereder...' : 'Förbered undervisningsmaterial'}
               </button>
-            </div>
-          </div>
-
-          {/* Steg 3 */}
-          <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">3</div>
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-3">
-                <h3 className="font-semibold text-gray-900">Resultat</h3>
+              <div className="mt-4">
                 {compiledAt && (
-                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full inline-block mb-3">
                     Uppdaterad {compiledAt.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
+                {compiledMaterial ? (
+                  <div className="prose prose-sm max-w-none bg-white border border-gray-200 rounded-lg p-4 max-h-96 overflow-y-auto">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{compiledMaterial}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">Inget material förberett ännu.</p>
+                )}
               </div>
-              {compiledMaterial ? (
-                <div className="prose prose-sm max-w-none bg-white border border-gray-200 rounded-lg p-4 max-h-96 overflow-y-auto">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{compiledMaterial}</ReactMarkdown>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400 italic">Inget material förberett ännu.</p>
-              )}
             </div>
           </div>
-
         </div>
 
-        {/* Steg 4 – Testa chat */}
+        {/* Steg 4 – Prov */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
-          <div className="flex gap-4">
+          <div className="flex gap-4 mb-3">
             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">4</div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-semibold text-gray-900">Testa chatten</h3>
-                <button
-                  onClick={() => setPromptModal({ title: 'Systemprompt – Chat-AI (Claude Sonnet)', text: buildChatPrompt() })}
-                  className="w-5 h-5 rounded-full bg-gray-200 text-gray-500 text-xs font-bold hover:bg-gray-300 flex items-center justify-center leading-none"
-                  title="Visa prompt som skickas till chat-AI"
-                >i</button>
-              </div>
-              <p className="text-sm text-gray-400 mb-3">Upplev kursen som en elev – samma vy, samma AI.</p>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => navigate(`/teacher/courses/${id}/teach`)}
-                  disabled={!compiledMaterial}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
-                >
-                  Läs o lär
-                </button>
-                <button
-                  onClick={() => navigate(`/teacher/courses/${id}/test-chat?mode=learn`)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                >
-                  Lär mig
-                </button>
-                <button
-                  onClick={() => navigate(`/teacher/courses/${id}/test-chat?mode=forhör`)}
-                  className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
-                >
-                  Förhör mig
-                </button>
-                <button
-                  onClick={clearTestSession}
-                  disabled={clearingSession}
-                  className="bg-gray-100 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 transition-colors"
-                >
-                  {clearingSession ? 'Rensar...' : 'Börja om'}
-                </button>
-              </div>
-            </div>
+            <h3 className="font-semibold text-gray-900 self-center">Prov</h3>
           </div>
-        </div>
-
-        {/* Quiz */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
-          <h3 className="font-semibold text-gray-900 mb-3">Quiz-frågor</h3>
 
           {quizQuestions.length > 0 && (
             <div className="mb-4 space-y-3">
@@ -508,6 +461,52 @@ export default function CourseEditorPage() {
               {addingQuestion ? 'Lägger till...' : 'Lägg till fråga'}
             </button>
           </form>
+        </div>
+
+        {/* Steg 5 – Testa */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+          <div className="flex gap-4">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">5</div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-semibold text-gray-900">Testa</h3>
+                <button
+                  onClick={() => setPromptModal({ title: 'Systemprompt – Chat-AI (Claude Sonnet)', text: buildChatPrompt() })}
+                  className="w-5 h-5 rounded-full bg-gray-200 text-gray-500 text-xs font-bold hover:bg-gray-300 flex items-center justify-center leading-none"
+                  title="Visa prompt som skickas till chat-AI"
+                >i</button>
+              </div>
+              <p className="text-sm text-gray-400 mb-3">Upplev kursen som en elev – samma vy, samma AI.</p>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => navigate(`/teacher/courses/${id}/teach`)}
+                  disabled={!compiledMaterial}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+                >
+                  Läs o lär
+                </button>
+                <button
+                  onClick={() => navigate(`/teacher/courses/${id}/test-chat?mode=learn`)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                >
+                  Lär mig
+                </button>
+                <button
+                  onClick={() => navigate(`/teacher/courses/${id}/test-chat?mode=forhör`)}
+                  className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
+                >
+                  Förhör mig
+                </button>
+                <button
+                  onClick={clearTestSession}
+                  disabled={clearingSession}
+                  className="bg-gray-100 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 transition-colors"
+                >
+                  {clearingSession ? 'Rensar...' : 'Börja om'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
       </div>
