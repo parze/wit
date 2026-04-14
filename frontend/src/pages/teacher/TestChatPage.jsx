@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import api from '../../lib/api';
 import { getSocket } from '../../lib/socket';
+import useTTS from '../../lib/useTTS';
 
 export default function TestChatPage() {
   const { id } = useParams();
@@ -35,13 +36,8 @@ export default function TestChatPage() {
   const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
 
-  // TTS state
-  const [ttsOffered, setTtsOffered] = useState(false);
-  const [ttsEnabled, setTtsEnabled] = useState(true);
-  const ttsEnabledRef = useRef(true);
-  const audioQueueRef = useRef({});
-  const nextTTSSeqRef = useRef(0);
-  const currentAudioRef = useRef(null);
+  // TTS
+  const { ttsEnabled, ttsOffered, setTtsOffered, unlockAudio, resetTTS, toggleTTS, onTTSChunk, onTTSSkip, onTTSDone } = useTTS();
 
   useEffect(() => {
     Promise.all([
@@ -95,21 +91,16 @@ export default function TestChatPage() {
       setQuizAnsweredSections(qas ?? []);
       if (newToc?.length) setToc(newToc);
     });
-    socket.on('chat_tts_chunk', ({ audioB64, seq }) => {
-      if (!ttsEnabledRef.current) return;
-      audioQueueRef.current[seq] = audioB64;
-      tryPlayNextTTS();
-    });
-    socket.on('chat_tts_skip', ({ seq }) => {
-      audioQueueRef.current[seq] = null;
-      tryPlayNextTTS();
-    });
+    socket.on('chat_tts_chunk', onTTSChunk);
+    socket.on('chat_tts_skip', onTTSSkip);
+    socket.on('chat_tts_done', onTTSDone);
     return () => {
       socket.off('analysis_complete');
       socket.off('quick_replies');
       socket.off('quiz_progress');
-      socket.off('chat_tts_chunk');
-      socket.off('chat_tts_skip');
+      socket.off('chat_tts_chunk', onTTSChunk);
+      socket.off('chat_tts_skip', onTTSSkip);
+      socket.off('chat_tts_done', onTTSDone);
     };
   }, []);
 
@@ -157,22 +148,6 @@ export default function TestChatPage() {
     streamMessage({ mode: 'forhör', intro: true });
   }, [mode, loading]);
 
-  function tryPlayNextTTS() {
-    if (currentAudioRef.current) return;
-    const seq = nextTTSSeqRef.current;
-    if (!(seq in audioQueueRef.current)) return;
-    const b64 = audioQueueRef.current[seq];
-    delete audioQueueRef.current[seq];
-    nextTTSSeqRef.current = seq + 1;
-    if (!b64) { tryPlayNextTTS(); return; }
-    const audio = new Audio(`data:audio/mpeg;base64,${b64}`);
-    currentAudioRef.current = audio;
-    const advance = () => { currentAudioRef.current = null; tryPlayNextTTS(); };
-    audio.onended = advance;
-    audio.onerror = advance;
-    audio.play().catch(advance);
-  }
-
   const streamMessage = async (body) => {
     const isQuiz = body.mode === 'forhör';
     setSending(true);
@@ -182,9 +157,7 @@ export default function TestChatPage() {
       setMessages(m => [...m, { role: 'assistant', content: '' }]);
     }
     try {
-      audioQueueRef.current = {};
-      nextTTSSeqRef.current = 0;
-      if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null; }
+      resetTTS();
 
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/chat/${id}`, {
@@ -253,9 +226,7 @@ export default function TestChatPage() {
 
   const resetBoth = async () => {
     setResetting(true);
-    if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null; }
-    audioQueueRef.current = {};
-    nextTTSSeqRef.current = 0;
+    resetTTS();
     try {
       await api.delete(`/courses/${id}/test-session`);
       await api.delete(`/courses/${id}/quiz-session`).catch(() => {});
@@ -281,6 +252,7 @@ export default function TestChatPage() {
   const sendMessage = async e => {
     e.preventDefault();
     if (!input.trim() || sending) return;
+    unlockAudio();
     const msg = input.trim();
     setInput('');
     setQuickReplies([]);
@@ -296,6 +268,7 @@ export default function TestChatPage() {
 
   const sendQuickReply = async (reply) => {
     if (sending) return;
+    unlockAudio();
     setQuickReplies([]);
     sessionStorage.removeItem(`quickReplies_${id}`);
     if (mode === 'forhör') {
@@ -327,15 +300,7 @@ export default function TestChatPage() {
           <span className="text-xs bg-amber-100 text-amber-700 font-medium px-2 py-0.5 rounded-full">Testläge</span>
           {ttsOffered && (
             <button
-              onClick={() => {
-                const next = !ttsEnabled;
-                setTtsEnabled(next);
-                ttsEnabledRef.current = next;
-                if (!next && currentAudioRef.current) {
-                  currentAudioRef.current.pause();
-                  currentAudioRef.current = null;
-                }
-              }}
+              onClick={() => toggleTTS(!ttsEnabled)}
               className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap px-1"
             >
               {ttsEnabled ? 'Ljud av' : 'Ljud på'}
