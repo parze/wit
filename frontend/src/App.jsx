@@ -9,12 +9,10 @@ import CourseEditorPage from './pages/teacher/CourseEditorPage';
 import DashboardPage from './pages/teacher/DashboardPage';
 import StudentsPage from './pages/teacher/StudentsPage';
 import ClassesPage from './pages/teacher/ClassesPage';
-import InstructionsPage from './pages/teacher/InstructionsPage';
 import TestChatPage from './pages/teacher/TestChatPage';
 import TeachMePage from './pages/teacher/TeachMePage';
 import StudentCoursesPage from './pages/student/StudentCoursesPage';
 import CoursePage from './pages/student/CoursePage';
-import CourseQuizPage from './pages/student/CourseQuizPage';
 
 function PrivateRoute({ children, role }) {
   const user = getUser();
@@ -59,18 +57,12 @@ export default function App() {
         <Route path="/teacher/classes" element={
           <PrivateRoute role="teacher"><ClassesPage /></PrivateRoute>
         } />
-        <Route path="/teacher/instructions" element={
-          <PrivateRoute role="teacher"><InstructionsPage /></PrivateRoute>
-        } />
 
         <Route path="/student/courses" element={
           <PrivateRoute role="student"><StudentCoursesPage /></PrivateRoute>
         } />
         <Route path="/student/courses/:id" element={
           <PrivateRoute role="student"><CoursePage /></PrivateRoute>
-        } />
-        <Route path="/student/courses/:courseId/quiz" element={
-          <PrivateRoute role="student"><CourseQuizPage /></PrivateRoute>
         } />
 
         <Route path="/" element={<RootRedirect />} />

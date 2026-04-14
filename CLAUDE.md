@@ -62,13 +62,16 @@ AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **l
    - Backend kör `compileCourse.js` → Claude **Opus 4.6** sammanställer allt till Markdown med Moment som `##`-rubriker
    - `compiled_material` + `compiled_toc` (lista med Moment-namn) sparas på `courses`
    - Lärarens testchatt-session raderas automatiskt
-3. Läraren väljer valfri **Instruktion** (`instruction_id` på kursen) med:
-   - `compile_prompt` – systemprompt till Opus vid materialgenerering
-   - `chat_prompt` – systemprompt till Sonnet i chatt-AI:n
+3. Läraren väljer **Lärstil** (`learning_mode` på kursen) – ett av 5 hårdkodade lägen definierade i `learningModes.js`:
+   - `procedural` – steg-för-steg
+   - `conceptual` – begreppsbaserat
+   - `discussion` – diskussionsbaserat
+   - `narrative` – berättande
+   - `exploratory` – utforskande
 
 ### 2. Elev chattar
 - `POST /api/chat/:courseId` (SSE streaming)
-- Sonnet 4.6 svarar baserat på `compiled_material` + `chat_prompt` från instruktionen
+- Sonnet 4.6 svarar baserat på `compiled_material` + lärstilens prompt från `learningModes.js`
 - Undervisar ett Moment i taget – bekräftar avklarat Moment och introducerar nästa
 - Intro-grejen: `{ intro: true }` i body → AI hälsar välkommen (hidden prompt, sparas ej som user-tur)
 - Chatthistorik sparas i `chat_sessions` (JSONB)
@@ -82,7 +85,7 @@ AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **l
 - `compiled_toc` extraheras automatiskt från `##`-rubriker i kompilerat material
 
 ### 4. Lärare testar arbetsområde
-- `CourseEditorPage` steg 4 → navigerar till `TestChatPage`
+- `CourseEditorPage` steg 4 → navigerar till `TestChatPage`/`TeachMePage`
 - Läraren chattar precis som en elev men progress sparas inte
 - "Rensa"-knapp återstartar sessionen
 
@@ -100,16 +103,14 @@ AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **l
     pages/
       teacher/
         TeacherCoursesPage.jsx   # Lista över arbetsområden
-        CourseEditorPage.jsx     # Steg 1-4: läromedel, kompilering, instruktion, testa
+        CourseEditorPage.jsx     # Steg 1-4: inställningar, läromedel, kompilering, testa
         TestChatPage.jsx         # Fullskärms testchatt (lärarens elev-vy)
-        InstructionsPage.jsx     # CRUD instruktioner (compile_prompt + chat_prompt)
         DashboardPage.jsx        # Elevframsteg per kurs
         StudentsPage.jsx         # Elever + exporterar Sidebar-komponent
         ClassesPage.jsx          # Klasser: elever + kurser
       student/
         StudentCoursesPage.jsx
         CoursePage.jsx           # AI-chatt + progress-panel
-        CourseQuizPage.jsx
   backend/src/
     db.js
     compileCourse.js             # Opus 4.6: sammanställer dokument → Markdown + TOC
@@ -120,11 +121,9 @@ AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **l
       documents.js     # Upload (multer), extrahera text
       chat.js          # POST /api/chat/:courseId – SSE + Haiku-analys + socket
       student.js       # GET /api/student/courses/:id (med aiSummary + messages)
-      instructions.js  # CRUD /api/instructions (compile_prompt + chat_prompt)
       teacher.js       # GET /api/teacher/courses/:id/progress
       students.js      # GET/POST/DELETE /api/students
       classes.js       # CRUD klasser + members + courses
-      quiz.js          # Quiz-frågor och resultat
       sections.js      # Kvarvarande sections-routes (legacy)
     migrations/        # 27 st Knex-migrationer
 ```
@@ -136,15 +135,12 @@ AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **l
 | Tabell | Viktiga fält |
 |--------|-------------|
 | users | id, email, password_hash, name, role (teacher/student), birth_year, gender |
-| courses | id, teacher_id, title, description, **compiled_material** (text), **compiled_toc** (JSONB), **instruction_id** |
+| courses | id, teacher_id, title, description, **compiled_material** (text), **compiled_toc** (JSONB), **learning_mode** |
 | section_documents | id, course_id, filename, original_name, extracted_text |
 | enrollments | id, student_id, course_id |
 | section_progress | id, student_id, course_id, status |
 | **chat_sessions** | id, student_id, **course_id**, messages (JSONB) |
 | **ai_summaries** | id, student_id, **course_id**, summary, goal_achievement, reasons, **current_section**, **completed_sections** (JSONB) |
-| course_instructions | id, teacher_id, name, **compile_prompt**, **chat_prompt**, is_default |
-| quiz_questions | id, course_id, question, options (JSONB), correct_index |
-| quiz_results | id, student_id, course_id, score, answers (JSONB) |
 | classes | id, teacher_id, name, birth_year |
 | class_members | id, class_id, student_id |
 | course_classes | id, course_id, class_id |
@@ -172,10 +168,6 @@ AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **l
 - `POST /api/documents/courses/:id` – ladda upp
 - `GET /api/documents/courses/:id`
 - `DELETE /api/documents/:id`
-
-### Instruktioner
-- `GET/POST /api/instructions`
-- `GET/PUT/DELETE /api/instructions/:id`
 
 ### Chatt (elever + lärare i testläge)
 - `POST /api/chat/:courseId` – SSE-stream, body: `{ message }` eller `{ intro: true }`

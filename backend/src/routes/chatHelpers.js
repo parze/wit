@@ -64,9 +64,10 @@ function setSSEHeaders(res) {
  * @param {number} opts.markerBufLen  - chars to hold back (0 = no buffering)
  * @param {RegExp[]} opts.stripRe     - patterns to strip from remainder before flushing
  * @param {number} opts.startSeq      - starting TTS sequence number
+ * @param {boolean} [opts.enableTTS]  - if false, skip TTS entirely (default true)
  * @returns {{ fullText: string, ttsSeq: number }}
  */
-async function streamWithMarkerAndTTS({ stream, res, io, studentId, markerBufLen, stripRe, startSeq, label }) {
+async function streamWithMarkerAndTTS({ stream, res, io, studentId, markerBufLen, stripRe, startSeq, label, enableTTS = true }) {
   const sentRe = /^([\s\S]*?[.!?])(\s+)/;
   let fullText = '';
   let streamBuf = '';
@@ -98,11 +99,13 @@ async function streamWithMarkerAndTTS({ stream, res, io, studentId, markerBufLen
         writeCount++;
         if (writeCount <= 3) process.stderr.write(`[stream:${label ?? '?'}] res.write #${writeCount} at +${Date.now() - t0}ms drained=${wrote}\n`);
       }
-      let sentMatch;
-      while ((sentMatch = sentRe.exec(ttsBuf)) !== null) {
-        const sentence = sentMatch[1];
-        ttsBuf = ttsBuf.slice(sentMatch[0].length);
-        emitChatTTS(io, studentId, sentence, ttsSeq++).catch(() => {});
+      if (enableTTS) {
+        let sentMatch;
+        while ((sentMatch = sentRe.exec(ttsBuf)) !== null) {
+          const sentence = sentMatch[1];
+          ttsBuf = ttsBuf.slice(sentMatch[0].length);
+          emitChatTTS(io, studentId, sentence, ttsSeq++).catch(() => {});
+        }
       }
     }
   }
@@ -120,7 +123,7 @@ async function streamWithMarkerAndTTS({ stream, res, io, studentId, markerBufLen
 
   process.stderr.write(`[stream:${label ?? '?'}] done: ${chunkCount} chunks, ${writeCount} writes, ${Date.now() - t0}ms total\n`);
   const ttsRemainder = applyStrip(ttsBuf).trim();
-  if (ttsRemainder) emitChatTTS(io, studentId, ttsRemainder, ttsSeq++).catch(() => {});
+  if (enableTTS && ttsRemainder) emitChatTTS(io, studentId, ttsRemainder, ttsSeq++).catch(() => {});
 
   return { fullText, ttsSeq };
 }

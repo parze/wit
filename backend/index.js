@@ -9,12 +9,10 @@ const coursesRoutes = require('./src/routes/courses');
 const documentsRoutes = require('./src/routes/documents');
 const studentRoutes = require('./src/routes/student');
 const chatRoutes = require('./src/routes/chat');
-const quizRoutes = require('./src/routes/quiz');
 const teacherRoutes = require('./src/routes/teacher');
 const studentsRoutes = require('./src/routes/students');
 const classesRoutes = require('./src/routes/classes');
 const aiTeachersRoutes = require('./src/routes/aiTeachers');
-const instructionsRoutes = require('./src/routes/instructions');
 
 const http = require('http');
 const { Server } = require('socket.io');
@@ -65,20 +63,10 @@ app.delete('/api/documents/:id', (req, res, next) => {
 // GET /api/student/courses
 // GET /api/student/courses/:id
 // POST /api/student/courses/:id/complete
-// GET /api/student/courses/:courseId/quiz
-// POST /api/student/courses/:courseId/quiz
 app.use('/api/student', studentRoutes);
 
 // POST /api/chat/:courseId
 app.use('/api/chat', chatRoutes);
-
-// GET    /api/courses/:id/quiz
-// POST   /api/courses/:id/quiz
-// POST   /api/courses/:id/quiz/questions
-// POST   /api/courses/:id/quiz/generate
-// DELETE /api/quiz/questions/:qid
-app.use('/api/courses', quizRoutes);
-app.use('/api/quiz', quizRoutes);
 
 // GET /api/teacher/courses/:id/progress
 app.use('/api/teacher', teacherRoutes);
@@ -95,9 +83,6 @@ app.use('/api/classes', classesRoutes);
 
 // GET/POST/PUT/DELETE /api/ai-teachers
 app.use('/api/ai-teachers', aiTeachersRoutes);
-
-// GET/POST/PUT/DELETE /api/instructions
-app.use('/api/instructions', instructionsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

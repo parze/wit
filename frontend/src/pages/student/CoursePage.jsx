@@ -37,6 +37,7 @@ export default function CoursePage() {
   const inputRef = useRef(null);
 
   // TTS state
+  const [ttsOffered, setTtsOffered] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const ttsEnabledRef = useRef(true);
   const audioQueueRef = useRef({});
@@ -144,6 +145,7 @@ export default function CoursePage() {
     try {
       const { data } = await api.get(`/student/courses/${id}`);
       setCourse(data);
+      setTtsOffered(data.enable_tts ?? false);
       setGoalAchievement(data.aiSummary?.goal_achievement ?? null);
       setAiSummary(data.aiSummary ?? null);
       if (data.compiled_toc?.length) setToc(data.compiled_toc);
@@ -306,20 +308,22 @@ export default function CoursePage() {
         <div className="flex items-center gap-3 px-4 py-2.5">
           <button onClick={() => navigate('/student/courses')} className="text-gray-400 hover:text-gray-600 text-lg leading-none">←</button>
           <span className="text-sm font-medium text-gray-800 truncate flex-1">{course?.title}</span>
-          <button
-            onClick={() => {
-              const next = !ttsEnabled;
-              setTtsEnabled(next);
-              ttsEnabledRef.current = next;
-              if (!next && currentAudioRef.current) {
-                currentAudioRef.current.pause();
-                currentAudioRef.current = null;
-              }
-            }}
-            className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap px-1"
-          >
-            {ttsEnabled ? 'Ljud av' : 'Ljud på'}
-          </button>
+          {ttsOffered && (
+            <button
+              onClick={() => {
+                const next = !ttsEnabled;
+                setTtsEnabled(next);
+                ttsEnabledRef.current = next;
+                if (!next && currentAudioRef.current) {
+                  currentAudioRef.current.pause();
+                  currentAudioRef.current = null;
+                }
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap px-1"
+            >
+              {ttsEnabled ? 'Ljud av' : 'Ljud på'}
+            </button>
+          )}
           {stars > 0 && <span className="text-sm mr-1">{'⭐'.repeat(stars)}</span>}
           {toc.length > 0 && (
             <span className={`text-xs font-medium whitespace-nowrap ${mode === 'forhör' ? 'text-purple-500' : 'text-blue-500'}`}>

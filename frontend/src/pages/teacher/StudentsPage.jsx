@@ -209,7 +209,6 @@ export function Sidebar({ active, navigate, user }) {
     { key: 'courses', label: 'Mina kurser', path: '/teacher/courses' },
     { key: 'classes', label: 'Klasser', path: '/teacher/classes' },
     { key: 'students', label: 'Elever', path: '/teacher/students' },
-    { key: 'instructions', label: 'Instruktioner', path: '/teacher/instructions' },
   ];
 
   return (

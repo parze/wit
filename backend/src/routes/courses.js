@@ -76,7 +76,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // PUT /api/courses/:id - update course (teacher owner only)
 router.put('/:id', authMiddleware, requireRole('teacher'), async (req, res) => {
   const { id } = req.params;
-  const { title, description, ai_teacher_id, instruction_id } = req.body;
+  const { title, description, ai_teacher_id, learning_mode } = req.body;
 
   try {
     const course = await db('courses').where({ id }).first();
@@ -92,12 +92,15 @@ router.put('/:id', authMiddleware, requireRole('teacher'), async (req, res) => {
     if ('ai_teacher_id' in req.body) {
       updateData.ai_teacher_id = ai_teacher_id || null;
     }
-    // Allow setting instruction_id (null = no instruction)
-    if ('instruction_id' in req.body) {
-      updateData.instruction_id = instruction_id || null;
-    }
     if ('enable_quick_replies' in req.body) {
       updateData.enable_quick_replies = !!req.body.enable_quick_replies;
+    }
+    if ('enable_tts' in req.body) {
+      updateData.enable_tts = !!req.body.enable_tts;
+    }
+    if ('learning_mode' in req.body) {
+      const VALID_MODES = ['procedural', 'conceptual', 'discussion', 'narrative', 'exploratory'];
+      updateData.learning_mode = VALID_MODES.includes(learning_mode) ? learning_mode : null;
     }
 
     const [updated] = await db('courses')

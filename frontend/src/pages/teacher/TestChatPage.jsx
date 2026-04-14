@@ -36,6 +36,7 @@ export default function TestChatPage() {
   const inputRef = useRef(null);
 
   // TTS state
+  const [ttsOffered, setTtsOffered] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const ttsEnabledRef = useRef(true);
   const audioQueueRef = useRef({});
@@ -49,6 +50,7 @@ export default function TestChatPage() {
       api.get(`/courses/${id}/quiz-session`),
     ]).then(async ([courseRes, sessionRes, quizRes]) => {
       setCourse(courseRes.data);
+      setTtsOffered(courseRes.data.enable_tts ?? false);
       if (courseRes.data.compiled_toc?.length) setToc(courseRes.data.compiled_toc);
 
       const existing = sessionRes.data.messages || [];
@@ -323,20 +325,22 @@ export default function TestChatPage() {
           <button onClick={() => navigate(`/teacher/courses/${id}`)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">←</button>
           <span className="text-sm font-medium text-gray-800 truncate flex-1">{course?.title}</span>
           <span className="text-xs bg-amber-100 text-amber-700 font-medium px-2 py-0.5 rounded-full">Testläge</span>
-          <button
-            onClick={() => {
-              const next = !ttsEnabled;
-              setTtsEnabled(next);
-              ttsEnabledRef.current = next;
-              if (!next && currentAudioRef.current) {
-                currentAudioRef.current.pause();
-                currentAudioRef.current = null;
-              }
-            }}
-            className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap px-1"
-          >
-            {ttsEnabled ? 'Ljud av' : 'Ljud på'}
-          </button>
+          {ttsOffered && (
+            <button
+              onClick={() => {
+                const next = !ttsEnabled;
+                setTtsEnabled(next);
+                ttsEnabledRef.current = next;
+                if (!next && currentAudioRef.current) {
+                  currentAudioRef.current.pause();
+                  currentAudioRef.current = null;
+                }
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap px-1"
+            >
+              {ttsEnabled ? 'Ljud av' : 'Ljud på'}
+            </button>
+          )}
           {toc.length > 0 && (
             <span className={`text-xs font-medium whitespace-nowrap ${mode === 'forhör' ? 'text-purple-500' : 'text-blue-500'}`}>
               {mode === 'forhör'

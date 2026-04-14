@@ -5,6 +5,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const db = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const logger = require('../logger');
+const LEARNING_MODES = require('../learningModes');
 const {
   setSSEHeaders,
   streamWithMarkerAndTTS,
@@ -82,11 +83,11 @@ Regler:
     let chatPrompt = BASE_CHAT_PROMPT;
     let quizPrompt = DEFAULT_QUIZ_PROMPT;
     const enableQuickReplies = !!course.enable_quick_replies;
-    if (course.instruction_id) {
-      const instruction = await db('course_instructions').where({ id: course.instruction_id }).first();
-      lap('db: instruction');
-      if (instruction?.chat_prompt) chatPrompt = instruction.chat_prompt;
-      if (instruction?.quiz_prompt) quizPrompt = instruction.quiz_prompt;
+    const enableTTS = !!course.enable_tts;
+    if (course.learning_mode) {
+      const mode = LEARNING_MODES.find(m => m.id === course.learning_mode);
+      if (mode?.chat_prompt) chatPrompt = mode.chat_prompt;
+      if (mode?.quiz_prompt) quizPrompt = mode.quiz_prompt;
     }
 
     // Resolve TOC (used by both quiz and learn mode)
@@ -167,6 +168,7 @@ Regler:
         stripRe: [QUIZ_MARKER_RE, MOMENT_SLUT_RE],
         startSeq: 0,
         label: 'förhör',
+        enableTTS,
       });
       io.to(`student:${studentId}`).emit('chat_tts_done');
 
@@ -241,6 +243,7 @@ Regler:
               stripRe: null,
               startSeq: ttsSeqAfterMain,
               label: 'förhör-advance',
+              enableTTS,
             });
             io.to(`student:${studentId}`).emit('chat_tts_done');
 
@@ -356,6 +359,7 @@ Regler:
       stripRe: [/\[MOMENT_KLAR\]/g],
       startSeq: 0,
       label: 'lär',
+      enableTTS,
     });
     io.to(`student:${studentId}`).emit('chat_tts_done');
 
@@ -461,6 +465,7 @@ Regler:
             markerBufLen: 0,
             stripRe: null,
             startSeq: ttsSeqAfterMain,
+            enableTTS,
           });
           io.to(`student:${studentId}`).emit('chat_tts_done');
 

@@ -66,12 +66,10 @@ router.get('/courses/:id', authMiddleware, requireRole('student'), async (req, r
       return res.status(403).json({ error: 'You are not enrolled in this course' });
     }
 
-    const [documents, questions, progress, chatSession, quizResult, aiSummary, starsCount] = await Promise.all([
+    const [documents, progress, chatSession, aiSummary, starsCount] = await Promise.all([
       db('section_documents').where({ course_id: id }).select('id', 'filename', 'original_name', 'created_at').orderBy('created_at', 'asc'),
-      db('quiz_questions').where({ course_id: id }).orderBy('order', 'asc').select('id', 'question', 'options', 'order'),
       db('section_progress').where({ student_id: req.user.id, course_id: id }).first(),
       db('chat_sessions').where({ student_id: req.user.id, course_id: id }).first(),
-      db('quiz_results').where({ student_id: req.user.id, course_id: id }).orderBy('created_at', 'desc').first(),
       db('ai_summaries').where({ student_id: req.user.id, course_id: id }).first(),
       db('section_stars').where({ student_id: req.user.id, course_id: id }).count('id as count').first(),
     ]);
@@ -79,11 +77,9 @@ router.get('/courses/:id', authMiddleware, requireRole('student'), async (req, r
     return res.json({
       ...course,
       documents,
-      questions,
       status: progress ? progress.status : 'not_started',
       messages: chatSession ? chatSession.messages : [],
       quizMessages: chatSession ? (chatSession.quiz_messages || []).filter(m => m.role !== 'meta') : [],
-      quizResult: quizResult || null,
       aiSummary: aiSummary || null,
       quizAnsweredSections: aiSummary?.quiz_answered_sections || [],
       quizScore: aiSummary?.quiz_score ?? null,
@@ -128,71 +124,6 @@ router.post('/courses/:id/complete', authMiddleware, requireRole('student'), asy
     return res.json({ stars: parseInt(newStarsCount.count) });
   } catch (err) {
     console.error('Complete course error:', err);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// GET /api/student/courses/:courseId/quiz - get all quiz questions for course
-router.get('/courses/:courseId/quiz', authMiddleware, requireRole('student'), async (req, res) => {
-  const { courseId } = req.params;
-  try {
-    const enrollment = await db('enrollments')
-      .where({ student_id: req.user.id, course_id: courseId })
-      .first();
-    if (!enrollment) return res.status(403).json({ error: 'You are not enrolled in this course' });
-
-    const questions = await db('quiz_questions')
-      .where({ course_id: courseId })
-      .orderBy('order', 'asc')
-      .select('id', 'question', 'options', 'order');
-
-    return res.json(questions);
-  } catch (err) {
-    console.error('Get course quiz error:', err);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// POST /api/student/courses/:courseId/quiz - submit answers
-router.post('/courses/:courseId/quiz', authMiddleware, requireRole('student'), async (req, res) => {
-  const { courseId } = req.params;
-  const { answers } = req.body;
-  try {
-    const enrollment = await db('enrollments')
-      .where({ student_id: req.user.id, course_id: courseId })
-      .first();
-    if (!enrollment) return res.status(403).json({ error: 'You are not enrolled in this course' });
-
-    // Verify course has ≥1 star
-    const starsCount = await db('section_stars')
-      .where({ student_id: req.user.id, course_id: courseId })
-      .count('id as count')
-      .first();
-    if (parseInt(starsCount.count) === 0) {
-      return res.status(403).json({ error: 'Du måste avsluta kursen minst en gång innan du kan göra kursets quiz' });
-    }
-
-    const questions = await db('quiz_questions')
-      .where({ course_id: courseId })
-      .orderBy('order', 'asc')
-      .select('id', 'question', 'options', 'correct_index', 'order');
-
-    let score = 0;
-    const results = questions.map((q, i) => {
-      const isCorrect = answers[i] === q.correct_index;
-      if (isCorrect) score++;
-      return {
-        question: q.question,
-        options: q.options,
-        yourAnswer: answers[i],
-        correct: q.correct_index,
-        isCorrect,
-      };
-    });
-
-    return res.json({ score, total: questions.length, results });
-  } catch (err) {
-    console.error('Submit course quiz error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

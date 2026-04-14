@@ -67,13 +67,12 @@ export default function DashboardPage() {
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Elev</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Stjärnor</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Quiz</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">AI-sammanfattning</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Måluppfyllnad</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {studentsProgress.map(({ student, status, stars, quizResult, aiSummary }) => (
+                  {studentsProgress.map(({ student, status, stars, aiSummary }) => (
                     <tr key={student.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-900">{student.name}</div>
@@ -88,11 +87,6 @@ export default function DashboardPage() {
                         ) : (
                           <span className="text-gray-300">–</span>
                         )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {quizResult
-                          ? `${quizResult.score}/${quizResult.total}`
-                          : <span className="text-gray-300">–</span>}
                       </td>
                       <td className="px-4 py-3 max-w-xs">
                         {aiSummary?.summary

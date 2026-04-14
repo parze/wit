@@ -1,5 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const db = require('./db');
+const LEARNING_MODES = require('./learningModes');
 
 const anthropic = new Anthropic();
 
@@ -27,19 +28,26 @@ async function compileCourseMaterial(courseId) {
     .map(d => `### ${d.original_name}\n\n${d.extracted_text}`)
     .join('\n\n---\n\n');
 
-  const course = await db('courses').where({ id: courseId }).select('instruction_id').first();
-  let systemPrompt = BASE_COMPILE_PROMPT;
-  if (course?.instruction_id) {
-    const instruction = await db('course_instructions').where({ id: course.instruction_id }).first();
-    if (instruction?.compile_prompt) {
-      systemPrompt = instruction.compile_prompt;
-    }
+  // Detect learning mode via Haiku before compilation
+  const rawForDetection = combined.substring(0, 3000);
+  try {
+    const modeMsg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 10,
+      system: 'Klassificera materialet i en av: procedural, conceptual, discussion, narrative, exploratory. Svara ENDAST med mode-ID:t, ingenting annat.',
+      messages: [{ role: 'user', content: rawForDetection }],
+    });
+    const detectedMode = modeMsg.content[0].text.trim().toLowerCase();
+    const validMode = LEARNING_MODES.find(m => m.id === detectedMode)?.id || null;
+    await db('courses').where({ id: courseId }).update({ learning_mode: validMode });
+  } catch (modeErr) {
+    console.error('Mode detection failed (non-fatal):', modeErr.message);
   }
 
   const message = await anthropic.messages.create({
     model: 'claude-opus-4-6',
     max_tokens: 8192,
-    system: systemPrompt,
+    system: BASE_COMPILE_PROMPT,
     messages: [
       {
         role: 'user',
