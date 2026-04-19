@@ -17,7 +17,10 @@ import CoursePage from './pages/student/CoursePage';
 function PrivateRoute({ children, role }) {
   const user = getUser();
   if (!user) return <Navigate to="/login" replace />;
-  if (role && user.role !== role) return <Navigate to="/" replace />;
+  if (role) {
+    const roles = Array.isArray(role) ? role : [role];
+    if (!roles.includes(user.role)) return <Navigate to="/" replace />;
+  }
   return children;
 }
 
@@ -63,6 +66,15 @@ export default function App() {
         } />
         <Route path="/student/courses/:id" element={
           <PrivateRoute role="student"><CoursePage /></PrivateRoute>
+        } />
+        <Route path="/student/courses/:id/edit" element={
+          <PrivateRoute role="student"><CourseEditorPage /></PrivateRoute>
+        } />
+        <Route path="/student/courses/:id/test-chat" element={
+          <PrivateRoute role="student"><TestChatPage /></PrivateRoute>
+        } />
+        <Route path="/student/courses/:id/teach" element={
+          <PrivateRoute role="student"><TeachMePage /></PrivateRoute>
         } />
 
         <Route path="/" element={<RootRedirect />} />

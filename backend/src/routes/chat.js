@@ -39,11 +39,8 @@ router.post('/:courseId', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Course not found' });
     }
 
-    if (isTeacher) {
-      if (course.teacher_id !== req.user.id) {
-        return res.status(403).json({ error: 'Not your course' });
-      }
-    } else {
+    const isOwner = course.teacher_id === req.user.id;
+    if (!isOwner) {
       const enrollment = await db('enrollments')
         .where({ student_id: req.user.id, course_id: courseId })
         .first();
@@ -381,8 +378,8 @@ Regler:
     await upsertChatSession(db, req.user.id, courseId, 'messages', messages, existingSession);
     lap('db: save session');
 
-    // Track student progress (skip for teachers testing their own course)
-    if (!isTeacher) {
+    // Track student progress (skip for owners testing their own course)
+    if (!isOwner) {
       const existingProgress = await db('section_progress')
         .where({ student_id: req.user.id, course_id: courseId })
         .first();

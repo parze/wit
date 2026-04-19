@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import api from '../../lib/api';
+import { getUser } from '../../lib/auth';
 import { getSocket } from '../../lib/socket';
 
 function splitIntoParagraphs(text) {
@@ -93,6 +94,8 @@ function ActiveParagraph({ para, words, activeWordIndex }) {
 export default function TeachMePage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const user = getUser();
+  const basePath = user?.role === 'teacher' ? '/teacher' : '/student';
 
   const [material, setMaterial] = useState('');
   const [paragraphs, setParagraphs] = useState([]);
@@ -292,16 +295,16 @@ export default function TeachMePage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center gap-3 flex-wrap">
         <button
-          onClick={() => { stopPlayback(); navigate(`/teacher/courses/${id}`); }}
+          onClick={() => { stopPlayback(); navigate(`${basePath}/courses/${id}`); }}
           className="text-gray-400 hover:text-gray-600 text-sm"
         >←</button>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <h2 className="font-semibold text-gray-900">Läs o lär</h2>
           <p className="text-xs text-gray-400">Uppläsning av kursmaterial</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {!playing && !done && (
             <button onClick={startPlayback} disabled={!material}
               className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors">
@@ -330,7 +333,7 @@ export default function TeachMePage() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-8 py-10">
+        <div className="max-w-3xl mx-auto px-4 py-6 sm:px-8 sm:py-10">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-6 text-sm">{error}</div>
           )}

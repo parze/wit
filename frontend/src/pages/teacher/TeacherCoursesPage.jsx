@@ -11,6 +11,7 @@ export default function TeacherCoursesPage() {
   const [form, setForm] = useState({ title: '', description: '' });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
   const user = getUser();
 
@@ -46,12 +47,17 @@ export default function TeacherCoursesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar active="courses" navigate={navigate} user={user} />
+      <Sidebar active="courses" navigate={navigate} user={user} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Main content */}
-      <div className="flex-1 p-8">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Mina arbetsområden</h2>
+      <div className="flex-1 p-4 sm:p-8">
+        <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSidebarOpen(true)} className="sm:hidden text-gray-500 hover:text-gray-700">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+            </button>
+            <h2 className="text-2xl font-bold text-gray-900">Mina arbetsområden</h2>
+          </div>
           <button
             onClick={() => setShowForm(s => !s)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"

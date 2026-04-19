@@ -3,12 +3,15 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import api from '../../lib/api';
+import { getUser } from '../../lib/auth';
 import { getSocket } from '../../lib/socket';
 import useTTS from '../../lib/useTTS';
 
 export default function TestChatPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const user = getUser();
+  const basePath = user?.role === 'teacher' ? '/teacher' : '/student';
   const [searchParams] = useSearchParams();
   const [course, setCourse] = useState(null);
   const [mode, setMode] = useState(searchParams.get('mode') === 'forhör' ? 'forhör' : 'learn');
@@ -295,7 +298,7 @@ export default function TestChatPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="flex items-center gap-3 px-4 py-2.5">
-          <button onClick={() => navigate(`/teacher/courses/${id}`)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">←</button>
+          <button onClick={() => navigate(`${basePath}/courses/${id}`)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">←</button>
           <span className="text-sm font-medium text-gray-800 truncate flex-1">{course?.title}</span>
           <span className="text-xs bg-amber-100 text-amber-700 font-medium px-2 py-0.5 rounded-full">Testläge</span>
           {ttsOffered && (

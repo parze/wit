@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import api from '../../lib/api';
+import { getUser } from '../../lib/auth';
 
 const LEARNING_MODES = [
   { id: 'procedural', label: 'Procedurellt', desc: 'Steg-för-steg, regler, rätt svar', icon: '⚙️' },
@@ -15,6 +16,8 @@ const LEARNING_MODES = [
 export default function CourseEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const user = getUser();
+  const basePath = user?.role === 'teacher' ? '/teacher' : '/student';
   const [course, setCourse] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -174,21 +177,23 @@ export default function CourseEditorPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3">
-        <button onClick={() => navigate('/teacher/courses')} className="text-gray-400 hover:text-gray-600 text-sm">←</button>
-        <div className="flex-1">
-          <h2 className="font-semibold text-gray-900">{course?.title}</h2>
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center gap-3 flex-wrap">
+        <button onClick={() => navigate(`${basePath}/courses`)} className="text-gray-400 hover:text-gray-600 text-sm">←</button>
+        <div className="flex-1 min-w-0">
+          <h2 className="font-semibold text-gray-900 truncate">{course?.title}</h2>
           <p className="text-xs text-gray-400">Arbetsområdeseditor</p>
         </div>
-        <button
-          onClick={() => navigate(`/teacher/courses/${id}/dashboard`)}
-          className="text-sm text-blue-600 font-medium hover:bg-blue-50 rounded-lg px-3 py-1.5"
-        >
-          Se dashboard →
-        </button>
+        {user?.role === 'teacher' && (
+          <button
+            onClick={() => navigate(`/teacher/courses/${id}/dashboard`)}
+            className="text-sm text-blue-600 font-medium hover:bg-blue-50 rounded-lg px-3 py-1.5"
+          >
+            Se dashboard →
+          </button>
+        )}
       </div>
 
-      <div className="p-8 max-w-3xl mx-auto">
+      <div className="p-4 sm:p-8 max-w-3xl mx-auto">
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-4 text-sm">
             {error}
@@ -343,20 +348,20 @@ export default function CourseEditorPage() {
               <p className="text-sm text-gray-400 mb-3">Upplev kursen som en elev – samma vy, samma AI.</p>
               <div className="flex gap-2 flex-wrap">
                 <button
-                  onClick={() => navigate(`/teacher/courses/${id}/teach`)}
+                  onClick={() => navigate(`${basePath}/courses/${id}/teach`)}
                   disabled={!compiledMaterial}
                   className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
                 >
                   Läs o lär
                 </button>
                 <button
-                  onClick={() => navigate(`/teacher/courses/${id}/test-chat?mode=learn`)}
+                  onClick={() => navigate(`${basePath}/courses/${id}/test-chat?mode=learn`)}
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
                 >
                   Lär mig
                 </button>
                 <button
-                  onClick={() => navigate(`/teacher/courses/${id}/test-chat?mode=forhör`)}
+                  onClick={() => navigate(`${basePath}/courses/${id}/test-chat?mode=forhör`)}
                   className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
                 >
                   Förhör mig

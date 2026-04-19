@@ -19,9 +19,7 @@ router.get('/', authMiddleware, async (req, res) => {
         'users.name as teacher_name'
       );
 
-    if (req.user.role === 'teacher') {
-      query = query.where('courses.teacher_id', req.user.id);
-    }
+    query = query.where('courses.teacher_id', req.user.id);
 
     const courses = await query.orderBy('courses.created_at', 'desc');
     return res.json(courses);
@@ -32,7 +30,7 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // POST /api/courses - create course (teacher only)
-router.post('/', authMiddleware, requireRole('teacher'), async (req, res) => {
+router.post('/', authMiddleware, requireRole('teacher', 'student'), async (req, res) => {
   const { title, description } = req.body;
   if (!title) {
     return res.status(400).json({ error: 'Title is required' });
@@ -74,7 +72,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 // PUT /api/courses/:id - update course (teacher owner only)
-router.put('/:id', authMiddleware, requireRole('teacher'), async (req, res) => {
+router.put('/:id', authMiddleware, requireRole('teacher', 'student'), async (req, res) => {
   const { id } = req.params;
   const { title, description, ai_teacher_id, learning_mode } = req.body;
 
@@ -116,7 +114,7 @@ router.put('/:id', authMiddleware, requireRole('teacher'), async (req, res) => {
 });
 
 // DELETE /api/courses/:id - delete course (teacher owner only)
-router.delete('/:id', authMiddleware, requireRole('teacher'), async (req, res) => {
+router.delete('/:id', authMiddleware, requireRole('teacher', 'student'), async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -137,7 +135,7 @@ router.delete('/:id', authMiddleware, requireRole('teacher'), async (req, res) =
 });
 
 // POST /api/courses/:id/compile - manually compile course material
-router.post('/:id/compile', authMiddleware, requireRole('teacher'), async (req, res) => {
+router.post('/:id/compile', authMiddleware, requireRole('teacher', 'student'), async (req, res) => {
   const { id } = req.params;
   try {
     const course = await db('courses').where({ id }).first();
@@ -241,7 +239,7 @@ router.post('/:id/enroll', authMiddleware, requireRole('teacher'), async (req, r
 });
 
 // GET /api/courses/:id/test-session – fetch teacher's own test chat messages
-router.get('/:id/test-session', authMiddleware, requireRole('teacher'), async (req, res) => {
+router.get('/:id/test-session', authMiddleware, requireRole('teacher', 'student'), async (req, res) => {
   const { id } = req.params;
   try {
     const course = await db('courses').where({ id, teacher_id: req.user.id }).first();
@@ -258,7 +256,7 @@ router.get('/:id/test-session', authMiddleware, requireRole('teacher'), async (r
 });
 
 // DELETE /api/courses/:id/test-session – clear teacher's test chat session
-router.delete('/:id/test-session', authMiddleware, requireRole('teacher'), async (req, res) => {
+router.delete('/:id/test-session', authMiddleware, requireRole('teacher', 'student'), async (req, res) => {
   const { id } = req.params;
   try {
     const course = await db('courses').where({ id, teacher_id: req.user.id }).first();
@@ -273,7 +271,7 @@ router.delete('/:id/test-session', authMiddleware, requireRole('teacher'), async
 });
 
 // GET /api/courses/:id/quiz-session – fetch teacher's quiz session
-router.get('/:id/quiz-session', authMiddleware, requireRole('teacher'), async (req, res) => {
+router.get('/:id/quiz-session', authMiddleware, requireRole('teacher', 'student'), async (req, res) => {
   const { id } = req.params;
   try {
     const course = await db('courses').where({ id, teacher_id: req.user.id }).first();
@@ -294,7 +292,7 @@ router.get('/:id/quiz-session', authMiddleware, requireRole('teacher'), async (r
 });
 
 // DELETE /api/courses/:id/quiz-session – clear teacher's quiz session
-router.delete('/:id/quiz-session', authMiddleware, requireRole('teacher'), async (req, res) => {
+router.delete('/:id/quiz-session', authMiddleware, requireRole('teacher', 'student'), async (req, res) => {
   const { id } = req.params;
   try {
     const course = await db('courses').where({ id, teacher_id: req.user.id }).first();

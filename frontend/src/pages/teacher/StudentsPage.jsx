@@ -12,6 +12,7 @@ export default function StudentsPage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
   const user = getUser();
 
@@ -56,17 +57,22 @@ export default function StudentsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar active="students" navigate={navigate} user={user} />
-      <div className="flex-1 p-8">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Elever</h2>
-          <div className="flex gap-3">
+      <Sidebar active="students" navigate={navigate} user={user} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="flex-1 p-4 sm:p-8">
+        <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSidebarOpen(true)} className="sm:hidden text-gray-500 hover:text-gray-700">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+            </button>
+            <h2 className="text-2xl font-bold text-gray-900">Elever</h2>
+          </div>
+          <div className="flex gap-3 flex-wrap">
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Sök elev..."
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-56"
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-56"
             />
             <button
               onClick={() => setShowForm(s => !s)}
@@ -87,7 +93,7 @@ export default function StudentsPage() {
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-3 text-sm">{error}</div>
             )}
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Namn</label>
                 <input
@@ -199,47 +205,52 @@ export default function StudentsPage() {
   );
 }
 
-export function Sidebar({ active, navigate, user }) {
+export function Sidebar({ active, navigate, user, open, onClose }) {
   const handleLogout = () => {
     clearAuth();
     navigate('/login');
   };
 
-  const navItems = [
-    { key: 'courses', label: 'Mina kurser', path: '/teacher/courses' },
-    { key: 'classes', label: 'Klasser', path: '/teacher/classes' },
-    { key: 'students', label: 'Elever', path: '/teacher/students' },
-  ];
+  const navItems = user?.role === 'student'
+    ? [{ key: 'courses', label: 'Mina arbetsområden', path: '/student/courses' }]
+    : [
+        { key: 'courses', label: 'Mina arbetsområden', path: '/teacher/courses' },
+        { key: 'classes', label: 'Klasser', path: '/teacher/classes' },
+        { key: 'students', label: 'Elever', path: '/teacher/students' },
+      ];
 
   return (
-    <div className="w-64 bg-white border-r border-gray-200 flex flex-col min-h-screen">
-      <div className="p-6 border-b border-gray-100">
-        <h1 className="text-xl font-bold text-gray-900">Lärmig</h1>
-        <p className="text-sm text-gray-500 mt-1">{user?.name}</p>
-      </div>
-      <nav className="flex-1 p-4 space-y-1">
-        {navItems.map(item => (
+    <>
+      {open && <div className="fixed inset-0 bg-black/30 z-30 sm:hidden" onClick={onClose} />}
+      <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 flex flex-col transform transition-transform sm:relative sm:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-6 border-b border-gray-100">
+          <h1 className="text-xl font-bold text-gray-900">Lärmig</h1>
+          <p className="text-sm text-gray-500 mt-1">{user?.name}</p>
+        </div>
+        <nav className="flex-1 p-4 space-y-1">
+          {navItems.map(item => (
+            <button
+              key={item.key}
+              onClick={() => { navigate(item.path); onClose?.(); }}
+              className={`w-full text-left rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                active === item.key
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <div className="p-4 border-t border-gray-100">
           <button
-            key={item.key}
-            onClick={() => navigate(item.path)}
-            className={`w-full text-left rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-              active === item.key
-                ? 'bg-blue-50 text-blue-700'
-                : 'text-gray-600 hover:bg-gray-50'
-            }`}
+            onClick={handleLogout}
+            className="w-full text-left text-sm text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50"
           >
-            {item.label}
+            Logga ut
           </button>
-        ))}
-      </nav>
-      <div className="p-4 border-t border-gray-100">
-        <button
-          onClick={handleLogout}
-          className="w-full text-left text-sm text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50"
-        >
-          Logga ut
-        </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

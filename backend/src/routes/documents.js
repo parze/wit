@@ -61,7 +61,7 @@ async function extractText(filePath, originalName) {
 }
 
 // POST /api/courses/:id/documents - upload document to course
-router.post('/:id/documents', authMiddleware, requireRole('teacher'), upload.single('file'), async (req, res) => {
+router.post('/:id/documents', authMiddleware, requireRole('teacher', 'student'), upload.single('file'), async (req, res) => {
   const { id } = req.params;
 
   if (!req.file) {
@@ -134,7 +134,7 @@ router.get('/:id/documents', authMiddleware, async (req, res) => {
 });
 
 // DELETE /api/documents/:id - delete a document
-router.delete('/documents/:id', authMiddleware, requireRole('teacher'), async (req, res) => {
+router.delete('/documents/:id', authMiddleware, requireRole('teacher', 'student'), async (req, res) => {
   const { id } = req.params;
 
   try {
