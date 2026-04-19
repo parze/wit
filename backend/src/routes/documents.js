@@ -61,7 +61,7 @@ async function extractText(filePath, originalName) {
 }
 
 // POST /api/courses/:id/documents - upload document to course
-router.post('/:id/documents', authMiddleware, requireRole('teacher', 'student'), upload.single('file'), async (req, res) => {
+router.post('/:id/documents', authMiddleware, requireRole('parent'), upload.single('file'), async (req, res) => {
   const { id } = req.params;
 
   if (!req.file) {
@@ -75,7 +75,7 @@ router.post('/:id/documents', authMiddleware, requireRole('teacher', 'student'),
       return res.status(404).json({ error: 'Course not found' });
     }
 
-    if (course.teacher_id !== req.user.id) {
+    if (course.parent_id !== req.user.id) {
       fs.unlinkSync(req.file.path);
       return res.status(403).json({ error: 'You do not own this course' });
     }
@@ -134,7 +134,7 @@ router.get('/:id/documents', authMiddleware, async (req, res) => {
 });
 
 // DELETE /api/documents/:id - delete a document
-router.delete('/documents/:id', authMiddleware, requireRole('teacher', 'student'), async (req, res) => {
+router.delete('/documents/:id', authMiddleware, requireRole('parent'), async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -145,7 +145,7 @@ router.delete('/documents/:id', authMiddleware, requireRole('teacher', 'student'
 
     const course = await db('courses').where({ id: doc.course_id }).first();
 
-    if (course.teacher_id !== req.user.id) {
+    if (course.parent_id !== req.user.id) {
       return res.status(403).json({ error: 'You do not own this document' });
     }
 

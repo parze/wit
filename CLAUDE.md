@@ -40,9 +40,9 @@ cd /home/pars/git/lärmig/backend && npx knex migrate:latest
 
 # Lärmig – Projektöversikt
 
-AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **läromedel** (PDF/DOCX/TXT). Materialet kompileras av Claude Opus till strukturerat Markdown uppdelat i **Moment** (`##`-rubriker). Elever lär sig via AI-chat (Claude Sonnet) som undervisar ett Moment i taget. En bakgrunds-AI (Claude Haiku) analyserar chatthistoriken och rapporterar vilka Moment som är avklarade.
+AI-driven undervisningsapp för hemmabruk. Föräldrar skapar **arbetsområden** och laddar upp **läromedel** (PDF/DOCX/TXT). Materialet kompileras av Claude Opus till strukturerat Markdown uppdelat i **Moment** (`##`-rubriker). Barn lär sig via AI-chat (Claude Sonnet) som undervisar ett Moment i taget. Progressen spåras automatiskt via TOC-avancering.
 
-> **Terminologi:** UI och prompter använder "arbetsområde" (inte "kurs"), "läromedel" (inte "dokument") och "Moment" (inte "del/avsnitt"). API-rutter och databaskolumner är oförändrade (`/api/courses`, `section_documents`, etc.).
+> **Terminologi:** UI och prompter använder "arbetsområde" (inte "kurs"), "läromedel" (inte "dokument") och "Moment" (inte "del/avsnitt"). Roller: "förälder" (parent) och "barn" (child). API-rutter och databaskolumner använder `parent_id`, `child_id` etc.
 
 ## Portar & Åtkomst
 
@@ -56,26 +56,25 @@ AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **l
 
 ## Arkitektur – Nyckelflöden
 
-### 1. Arbetsområdesuppbyggnad (lärare)
-1. Lärare skapar arbetsområde → laddar upp läromedel till `section_documents`
+### 1. Arbetsområdesuppbyggnad (förälder)
+1. Förälder skapar arbetsområde → laddar upp läromedel till `section_documents`
 2. "Förbered undervisningsmaterial" → `POST /api/courses/:id/compile`
    - Backend kör `compileCourse.js` → Claude **Opus 4.6** sammanställer allt till Markdown med Moment som `##`-rubriker
    - `compiled_material` + `compiled_toc` (lista med Moment-namn) sparas på `courses`
-   - Lärarens testchatt-session raderas automatiskt
-3. Läraren väljer **Lärstil** (`learning_mode` på kursen) – ett av 5 hårdkodade lägen definierade i `learningModes.js`:
+   - Förälderns testchatt-session raderas automatiskt
+3. Föräldern väljer **Lärstil** (`learning_mode` på kursen) – ett av 5 hårdkodade lägen definierade i `learningModes.js`:
    - `procedural` – steg-för-steg
    - `conceptual` – begreppsbaserat
    - `discussion` – diskussionsbaserat
    - `narrative` – berättande
    - `exploratory` – utforskande
 
-### 2. Elev chattar
+### 2. Barn chattar
 - `POST /api/chat/:courseId` (SSE streaming)
 - Sonnet 4.6 svarar baserat på `compiled_material` + lärstilens prompt från `learningModes.js`
 - Undervisar ett Moment i taget – bekräftar avklarat Moment och introducerar nästa
 - Intro-grejen: `{ intro: true }` i body → AI hälsar välkommen (hidden prompt, sparas ej som user-tur)
 - Chatthistorik sparas i `chat_sessions` (JSONB)
-- Efter varje svar: Haiku analyserar historiken → returnerar `{ currentSection, completedSections[], summary, reasons }`
 - `goalAchievement` = `completedSections.length / toc.length * 100`
 - Resultat sparas i `ai_summaries`, skickas live via **Socket.io** (`analysis_complete`-event)
 
@@ -84,10 +83,15 @@ AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **l
 - Vänsterpanel (sm+): rubrik "Moment", visar TOC med grön bock på klara Moment, blå markering på pågående
 - `compiled_toc` extraheras automatiskt från `##`-rubriker i kompilerat material
 
-### 4. Lärare testar arbetsområde
+### 4. Förälder testar arbetsområde
 - `CourseEditorPage` steg 4 → navigerar till `TestChatPage`/`TeachMePage`
-- Läraren chattar precis som en elev men progress sparas inte
+- Föräldern chattar precis som ett barn men progress sparas inte
 - "Rensa"-knapp återstartar sessionen
+
+### 5. Barn skapas av föräldern
+- Barn har `username` (inte email) + lösenord
+- Föräldern skapar barn via `/parent/children`-sidan
+- Login stödjer both email (förälder) och username (barn) — backend kollar `@` i input
 
 ---
 
@@ -98,34 +102,31 @@ AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **l
   frontend/src/
     lib/
       api.js          # Axios, baseURL = http://49.12.195.247:5210/api
-      auth.js         # JWT: getUser(), clearAuth()
-      socket.js       # Socket.io-klient
+      auth.js         # JWT: getUser(), clearAuth(), isParent()
+      socket.js       # Socket.io-klient (query: userId)
     pages/
       teacher/
-        TeacherCoursesPage.jsx   # Lista över arbetsområden
+        TeacherCoursesPage.jsx   # Lista över arbetsområden (förälder)
         CourseEditorPage.jsx     # Steg 1-4: inställningar, läromedel, kompilering, testa
-        TestChatPage.jsx         # Fullskärms testchatt (lärarens elev-vy)
-        DashboardPage.jsx        # Elevframsteg per kurs
-        StudentsPage.jsx         # Elever + exporterar Sidebar-komponent
-        ClassesPage.jsx          # Klasser: elever + kurser
+        TestChatPage.jsx         # Fullskärms testchatt (förälderns barn-vy)
+        DashboardPage.jsx        # Barnframsteg per kurs
+        StudentsPage.jsx         # Barn + exporterar Sidebar-komponent
       student/
-        StudentCoursesPage.jsx
+        StudentCoursesPage.jsx   # Barnets kurslista (enrollade kurser)
         CoursePage.jsx           # AI-chatt + progress-panel
   backend/src/
     db.js
     compileCourse.js             # Opus 4.6: sammanställer dokument → Markdown + TOC
     middleware/auth.js           # authMiddleware, requireRole()
     routes/
-      auth.js          # /api/auth/register, /login
+      auth.js          # /api/auth/register, /login (stödjer email + username)
       courses.js       # CRUD kurser + enroll + test-session + compile
       documents.js     # Upload (multer), extrahera text
-      chat.js          # POST /api/chat/:courseId – SSE + Haiku-analys + socket
-      student.js       # GET /api/student/courses/:id (med aiSummary + messages)
-      teacher.js       # GET /api/teacher/courses/:id/progress
-      students.js      # GET/POST/DELETE /api/students
-      classes.js       # CRUD klasser + members + courses
-      sections.js      # Kvarvarande sections-routes (legacy)
-    migrations/        # 27 st Knex-migrationer
+      chat.js          # POST /api/chat/:courseId – SSE + analys + socket
+      child.js         # GET /api/child/courses/:id (med aiSummary + messages)
+      parent.js        # GET /api/parent/courses/:id/progress
+      children.js      # GET/POST/DELETE /api/children
+    migrations/        # 8 st Knex-migrationer (20260001–20260008)
 ```
 
 ---
@@ -134,55 +135,49 @@ AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **l
 
 | Tabell | Viktiga fält |
 |--------|-------------|
-| users | id, email, password_hash, name, role (teacher/student), birth_year, gender |
-| courses | id, teacher_id, title, description, **compiled_material** (text), **compiled_toc** (JSONB), **learning_mode** |
+| users | id, name, email (nullable, föräldrar), username (nullable, barn), password_hash, role (parent/child), parent_id FK→users, gender, birth_year |
+| courses | id, parent_id, title, description, **compiled_material** (text), **compiled_toc** (JSONB), **learning_mode** |
 | section_documents | id, course_id, filename, original_name, extracted_text |
-| enrollments | id, student_id, course_id |
-| section_progress | id, student_id, course_id, status |
-| **chat_sessions** | id, student_id, **course_id**, messages (JSONB) |
-| **ai_summaries** | id, student_id, **course_id**, summary, goal_achievement, reasons, **current_section**, **completed_sections** (JSONB) |
-| classes | id, teacher_id, name, birth_year |
-| class_members | id, class_id, student_id |
-| course_classes | id, course_id, class_id |
-| ai_teachers | id, ... (legacy, används ej längre) |
-
-> **Notera:** Sections-tabellen droppades (migration 20240021). Allt är nu direkt på `courses`.
+| enrollments | id, child_id, course_id, unique(child_id, course_id) |
+| chat_sessions | id, child_id, course_id, messages (JSONB), quiz_messages (JSONB) |
+| ai_summaries | id, child_id, course_id, summary, goal_achievement, reasons, current_section, completed_sections (JSONB), quiz_score, quiz_answered_sections (JSONB) |
+| section_progress | id, child_id, course_id, status |
+| section_stars | id, child_id, course_id, goal_achievement |
 
 ---
 
 ## API-rutter (aktuellt)
 
 ### Auth
-- `POST /api/auth/register` / `/login`
+- `POST /api/auth/register` – skapar föräldrakonto (hårdkodad role: parent)
+- `POST /api/auth/login` – stödjer email (förälder) och username (barn)
 
-### Kurser (lärare)
+### Kurser (förälder)
 - `GET/POST /api/courses`
 - `GET/PUT/DELETE /api/courses/:id`
 - `POST /api/courses/:id/compile` – generera material (Opus), raderar testchatt
-- `GET/DELETE /api/courses/:id/test-session` – lärarens testchatt
+- `GET/DELETE /api/courses/:id/test-session` – förälderns testchatt
+- `GET/DELETE /api/courses/:id/quiz-session` – förälderns quiz-session
 - `GET /api/courses/:id/enrollments`
-- `POST /api/courses/:id/enroll`
-- `DELETE /api/courses/:id/enrollments/:studentId`
+- `POST /api/courses/:id/enroll` – enrolla barn via child_id
+- `DELETE /api/courses/:id/enrollments/:childId`
 
 ### Dokument
-- `POST /api/documents/courses/:id` – ladda upp
-- `GET /api/documents/courses/:id`
+- `POST /api/courses/:id/documents` – ladda upp
+- `GET /api/courses/:id/documents`
 - `DELETE /api/documents/:id`
 
-### Chatt (elever + lärare i testläge)
+### Chatt (barn + förälder i testläge)
 - `POST /api/chat/:courseId` – SSE-stream, body: `{ message }` eller `{ intro: true }`
 
-### Student
-- `GET /api/student/courses` – kurser + aiSummary + messages
-- `GET /api/student/courses/:id` – kursdetaljer + chatthistorik
-- `POST /api/student/courses/:id/complete` – markera avklarad (ger stjärna)
+### Barn
+- `GET /api/child/courses` – kurser + aiSummary + messages
+- `GET /api/child/courses/:id` – kursdetaljer + chatthistorik
+- `POST /api/child/courses/:id/complete` – markera avklarad (ger stjärna)
 
-### Lärare / Dashboard
-- `GET /api/teacher/courses/:id/progress`
-- `GET/POST/DELETE /api/students`
-- `GET/POST /api/classes`
-- `POST/DELETE /api/classes/:id/members`
-- `POST/DELETE /api/classes/:id/courses`
+### Förälder / Dashboard
+- `GET /api/parent/courses/:id/progress`
+- `GET/POST/DELETE /api/children`
 
 ---
 
@@ -193,18 +188,16 @@ AI-driven undervisningsapp. Lärare skapar **arbetsområden** och laddar upp **l
 - **Modeller**:
   - Opus 4.6 (`claude-opus-4-6`) – kompilering av kursmaterial (8192 tokens)
   - Sonnet 4.6 (`claude-sonnet-4-6`) – chattundervisning (1024 tokens, prompt caching)
-  - Haiku 4.5 (`claude-haiku-4-5-20251001`) – analys av progress (512 tokens)
+  - Haiku 4.5 (`claude-haiku-4-5-20251001`) – quick replies (512 tokens)
 - **Prompt caching**: systemprompten i chat.js har `cache_control: { type: 'ephemeral' }`
-- **Socket.io**: backend emittar `analysis_complete` till `student:{id}` rummet
+- **Socket.io**: backend emittar `analysis_complete` till `user:{id}` rummet
 - **Intro-flöde**: `{ intro: true }` → hidden user-prompt injiceras, poppas bort före sparning
 - **TOC/Moment**: extraheras automatiskt ur `##`-rubriker i compiled_material, aldrig `###`. Varje `##`-rubrik = ett Moment
-- **Sidebar-komponent**: exporteras från `StudentsPage.jsx`, importeras av andra lärarsidor
-- **Enrollment via klasser**: tilldela kurs till klass → alla klassmedlemmar auto-enrollas
+- **Sidebar-komponent**: exporteras från `StudentsPage.jsx`, importeras av andra sidor
 
 ## Vanliga Problem & Tips
 
 - Om nodemon inte startar om – kör `touch index.js` för att trigga restart
 - Docker-kommandon: använd `sg docker -c "..."` (användaren är inte i docker-gruppen)
 - Kontrollera processer: `pgrep -a node` och `pgrep -a vite`
-- `ai_teachers`-tabellen finns kvar i databasen men används inte längre (kan städas bort)
-- `HjalplararePage.jsx` finns kvar som fil men är inte länkad i routing
+- `HjalplararePage.jsx` och `SectionPage.jsx` finns kvar som filer men är inte länkade i routing

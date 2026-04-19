@@ -7,7 +7,7 @@ export function getSocket() {
   if (!socket) {
     const user = getUser();
     socket = io(window.location.origin, {
-      query: { studentId: user?.id },
+      query: { userId: user?.id },
       transports: ['websocket'],
     });
   }

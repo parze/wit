@@ -9,4 +9,4 @@ export const clearAuth = () => {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
 };
-export const isTeacher = () => getUser()?.role === 'teacher';
+export const isParent = () => getUser()?.role === 'parent';

@@ -4,7 +4,7 @@ import api from '../lib/api';
 import { setAuth } from '../lib/auth';
 
 export default function RegisterPage() {
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'student' });
+  const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -17,7 +17,7 @@ export default function RegisterPage() {
     try {
       const { data } = await api.post('/auth/register', form);
       setAuth(data.token, data.user);
-      navigate(data.user.role === 'teacher' ? '/teacher/courses' : '/student/courses');
+      navigate('/parent/courses');
     } catch (err) {
       setError(err.response?.data?.error || 'Registrering misslyckades');
     } finally {
@@ -87,17 +87,6 @@ export default function RegisterPage() {
                 )}
               </button>
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Roll</label>
-            <select
-              value={form.role}
-              onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="student">Elev</option>
-              <option value="teacher">Lärare</option>
-            </select>
           </div>
           <button
             type="submit"

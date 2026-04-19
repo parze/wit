@@ -15,9 +15,9 @@ function stripMarkdown(text) {
 
 async function emitChatTTS(io, studentId, text, seq) {
   const API_KEY = process.env.ELEVENLABS_API_KEY;
-  if (!API_KEY) { io.to(`student:${studentId}`).emit('chat_tts_skip', { seq }); return; }
+  if (!API_KEY) { io.to(`user:${studentId}`).emit('chat_tts_skip', { seq }); return; }
   const plain = stripMarkdown(text);
-  if (!plain || plain.length < 4) { io.to(`student:${studentId}`).emit('chat_tts_skip', { seq }); return; }
+  if (!plain || plain.length < 4) { io.to(`user:${studentId}`).emit('chat_tts_skip', { seq }); return; }
   try {
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}/stream`,
@@ -31,13 +31,13 @@ async function emitChatTTS(io, studentId, text, seq) {
         }),
       }
     );
-    if (!response.ok) { io.to(`student:${studentId}`).emit('chat_tts_skip', { seq }); return; }
+    if (!response.ok) { io.to(`user:${studentId}`).emit('chat_tts_skip', { seq }); return; }
     const chunks = [];
     for await (const chunk of response.body) chunks.push(chunk);
     const audioB64 = Buffer.concat(chunks).toString('base64');
-    io.to(`student:${studentId}`).emit('chat_tts_chunk', { audioB64, seq });
+    io.to(`user:${studentId}`).emit('chat_tts_chunk', { audioB64, seq });
   } catch {
-    io.to(`student:${studentId}`).emit('chat_tts_skip', { seq });
+    io.to(`user:${studentId}`).emit('chat_tts_skip', { seq });
   }
 }
 
@@ -134,16 +134,16 @@ async function streamWithMarkerAndTTS({ stream, res, io, studentId, markerBufLen
  */
 async function upsertAiSummary(db, studentId, courseId, patch, defaults = {}) {
   const existing = await db('ai_summaries')
-    .where({ student_id: studentId, course_id: courseId })
+    .where({ child_id: studentId, course_id: courseId })
     .first();
 
   if (existing) {
     await db('ai_summaries')
-      .where({ student_id: studentId, course_id: courseId })
+      .where({ child_id: studentId, course_id: courseId })
       .update({ ...patch, updated_at: db.fn.now() });
   } else {
     await db('ai_summaries').insert({
-      student_id: studentId,
+      child_id: studentId,
       course_id: courseId,
       ...defaults,
       ...patch,
@@ -159,11 +159,11 @@ async function upsertAiSummary(db, studentId, courseId, patch, defaults = {}) {
 async function upsertChatSession(db, userId, courseId, messagesField, messages, existingSession, extraInsertFields = {}) {
   if (existingSession) {
     await db('chat_sessions')
-      .where({ student_id: userId, course_id: courseId })
+      .where({ child_id: userId, course_id: courseId })
       .update({ [messagesField]: JSON.stringify(messages), updated_at: db.fn.now() });
   } else {
     await db('chat_sessions').insert({
-      student_id: userId,
+      child_id: userId,
       course_id: courseId,
       [messagesField]: JSON.stringify(messages),
       ...extraInsertFields,

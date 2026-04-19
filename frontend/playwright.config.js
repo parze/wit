@@ -12,14 +12,14 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'teacher',
+      name: 'parent',
       use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
-      testMatch: ['**/auth.spec.js', '**/teacher.spec.js', '**/dashboard.spec.js'],
+      testMatch: ['**/auth.spec.js', '**/parent.spec.js', '**/dashboard.spec.js'],
     },
     {
-      name: 'student',
+      name: 'child',
       use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
-      testMatch: ['**/student.spec.js'],
+      testMatch: ['**/child.spec.js'],
     },
   ],
 });

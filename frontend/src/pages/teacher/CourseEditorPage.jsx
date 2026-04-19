@@ -17,7 +17,7 @@ export default function CourseEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const user = getUser();
-  const basePath = user?.role === 'teacher' ? '/teacher' : '/student';
+  const basePath = user?.role === 'parent' ? '/parent' : '/child';
   const [course, setCourse] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,15 +25,18 @@ export default function CourseEditorPage() {
 
   // Document upload
   const [uploading, setUploading] = useState(false);
-  const [uploadFile, setUploadFile] = useState(null);
 
   // Compile
   const [compiling, setCompiling] = useState(false);
+  const [compileProgress, setCompileProgress] = useState(0);
   const [compiledMaterial, setCompiledMaterial] = useState(null);
   const [compiledAt, setCompiledAt] = useState(null);
 
   // TOC
   const [toc, setToc] = useState([]);
+
+  // Course title (for draft naming flow)
+  const [courseTitle, setCourseTitle] = useState('');
 
   // Learning mode
   const [learningMode, setLearningMode] = useState(null);
@@ -44,12 +47,10 @@ export default function CourseEditorPage() {
   // TTS
   const [enableTts, setEnableTts] = useState(false);
 
-  // Clear test session
-  const [clearingSession, setClearingSession] = useState(false);
-
-
   useEffect(() => {
-    fetchCourse();
+    fetchCourse().then(saved => {
+      if (saved) navigate(`${basePath}/courses`, { replace: true });
+    });
     fetchDocuments();
   }, [id]);
 
@@ -57,26 +58,18 @@ export default function CourseEditorPage() {
     try {
       const { data } = await api.get(`/courses/${id}`);
       setCourse(data);
+      setCourseTitle(data.title || '');
       setCompiledMaterial(data.compiled_material ?? null);
       setToc(Array.isArray(data.compiled_toc) ? data.compiled_toc : []);
       setEnableQuickReplies(data.enable_quick_replies ?? false);
       setEnableTts(data.enable_tts ?? false);
       setLearningMode(data.learning_mode ?? null);
+      return !!data.title;
     } catch {
       setError('Kunde inte hämta arbetsområde');
+      return false;
     } finally {
       setLoading(false);
-    }
-  };
-
-  const clearTestSession = async () => {
-    setClearingSession(true);
-    try {
-      await api.delete(`/courses/${id}/test-session`);
-    } catch {
-      setError('Kunde inte rensa testsession');
-    } finally {
-      setClearingSession(false);
     }
   };
 
@@ -128,17 +121,13 @@ export default function CourseEditorPage() {
     } catch {}
   };
 
-  const uploadDocument = async e => {
-    e.preventDefault();
-    if (!uploadFile) return;
+  const uploadDocument = async (file) => {
     setUploading(true);
     const formData = new FormData();
-    formData.append('file', uploadFile);
+    formData.append('file', file);
     try {
       const { data } = await api.post(`/courses/${id}/documents`, formData);
       setDocuments(d => [...d, data]);
-      setUploadFile(null);
-      e.target.reset();
     } catch (err) {
       setError(err.response?.data?.error || 'Uppladdning misslyckades');
     } finally {
@@ -146,10 +135,25 @@ export default function CourseEditorPage() {
     }
   };
 
+  const COMPILE_STEPS = [
+    'Läser in läromedel...',
+    'Analyserar innehåll...',
+    'Strukturerar moment...',
+    'Slutför...',
+  ];
+
   const compileCourse = async () => {
     setCompiling(true);
+    setCompileProgress(0);
+    const timer = setInterval(() => {
+      setCompileProgress(p => Math.min(p + 1, COMPILE_STEPS.length - 1));
+    }, 4000);
     try {
-      await api.post(`/courses/${id}/compile`);
+      const { data: compileResult } = await api.post(`/courses/${id}/compile`);
+      setCompileProgress(COMPILE_STEPS.length - 1);
+      if (compileResult.suggested_title && !courseTitle) {
+        setCourseTitle(compileResult.suggested_title);
+      }
       const { data } = await api.get(`/courses/${id}`);
       setCompiledMaterial(data.compiled_material ?? null);
       setCompiledAt(new Date());
@@ -159,6 +163,7 @@ export default function CourseEditorPage() {
     } catch (err) {
       setError(err.response?.data?.error || 'Kompilering misslyckades');
     } finally {
+      clearInterval(timer);
       setCompiling(false);
     }
   };
@@ -180,13 +185,13 @@ export default function CourseEditorPage() {
       <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center gap-3 flex-wrap">
         <button onClick={() => navigate(`${basePath}/courses`)} className="text-gray-400 hover:text-gray-600 text-sm">←</button>
         <div className="flex-1 min-w-0">
-          <h2 className="font-semibold text-gray-900 truncate">{course?.title}</h2>
+          <h2 className="font-semibold text-gray-900 truncate">{courseTitle || 'Nytt arbetsområde'}</h2>
           <p className="text-xs text-gray-400">Arbetsområdeseditor</p>
         </div>
-        {user?.role === 'teacher' && (
+        {user?.role === 'parent' && course?.title && (
           <button
-            onClick={() => navigate(`/teacher/courses/${id}/dashboard`)}
-            className="text-sm text-blue-600 font-medium hover:bg-blue-50 rounded-lg px-3 py-1.5"
+            onClick={() => navigate(`/parent/courses/${id}/dashboard`)}
+            className="hidden sm:block text-sm text-blue-600 font-medium hover:bg-blue-50 rounded-lg px-3 py-1.5"
           >
             Se dashboard →
           </button>
@@ -200,6 +205,7 @@ export default function CourseEditorPage() {
           </div>
         )}
 
+        {(!compiledMaterial || course?.title) && (<>
         {/* Steg 1 – Inställningar */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
           <div className="flex gap-4">
@@ -252,22 +258,20 @@ export default function CourseEditorPage() {
                   ))}
                 </div>
               )}
-              <form onSubmit={uploadDocument} className="flex gap-2 items-center">
+              <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${uploading ? 'bg-gray-200 text-gray-400' : 'bg-gray-700 text-white hover:bg-gray-800'}`}>
                 <input
                   type="file"
                   accept=".pdf,.docx,.txt"
-                  onChange={e => setUploadFile(e.target.files[0])}
-                  className="text-sm text-gray-600 flex-1"
-                  required
-                />
-                <button
-                  type="submit"
+                  className="hidden"
                   disabled={uploading}
-                  className="bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50 whitespace-nowrap"
-                >
-                  {uploading ? 'Laddar upp...' : 'Ladda upp'}
-                </button>
-              </form>
+                  onChange={e => {
+                    const file = e.target.files[0];
+                    if (file) uploadDocument(file);
+                    e.target.value = '';
+                  }}
+                />
+                {uploading ? 'Laddar upp...' : '+ Lägg till fil'}
+              </label>
               <p className="text-xs text-gray-400 mt-1">Stöder PDF, DOCX och TXT</p>
             </div>
           </div>
@@ -279,13 +283,31 @@ export default function CourseEditorPage() {
             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">3</div>
             <div className="flex-1">
               <h3 className="font-semibold text-gray-900 mb-3">Förbered undervisningsmaterial</h3>
-              <button
-                onClick={compileCourse}
-                disabled={compiling || documents.length === 0}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm"
-              >
-                {compiling ? 'Förbereder...' : 'Förbered undervisningsmaterial'}
-              </button>
+              {!compiling ? (
+                <button
+                  onClick={compileCourse}
+                  disabled={documents.length === 0}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm"
+                >
+                  Förbered undervisningsmaterial
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <svg className="animate-spin h-5 w-5 text-indigo-600" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <span className="text-sm text-gray-700">{COMPILE_STEPS[compileProgress]}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                    <div
+                      className="bg-indigo-600 h-1.5 rounded-full transition-all duration-700"
+                      style={{ width: `${((compileProgress + 1) / COMPILE_STEPS.length) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Learning mode display + override */}
               <div className="mt-4">
@@ -338,45 +360,36 @@ export default function CourseEditorPage() {
             </div>
           </div>
         </div>
+        </>)}
 
-        {/* Steg 4 – Testa */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
-          <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">4</div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-gray-900 mb-1">Testa</h3>
-              <p className="text-sm text-gray-400 mb-3">Upplev kursen som en elev – samma vy, samma AI.</p>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => navigate(`${basePath}/courses/${id}/teach`)}
-                  disabled={!compiledMaterial}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
-                >
-                  Läs o lär
-                </button>
-                <button
-                  onClick={() => navigate(`${basePath}/courses/${id}/test-chat?mode=learn`)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                >
-                  Lär mig
-                </button>
-                <button
-                  onClick={() => navigate(`${basePath}/courses/${id}/test-chat?mode=forhör`)}
-                  className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
-                >
-                  Förhör mig
-                </button>
-                <button
-                  onClick={clearTestSession}
-                  disabled={clearingSession}
-                  className="bg-gray-100 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 transition-colors"
-                >
-                  {clearingSession ? 'Rensar...' : 'Börja om'}
-                </button>
-              </div>
-            </div>
+        {/* Name & save — shown after compilation */}
+        {compiledMaterial && !course?.title && (
+          <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+            <h3 className="font-semibold text-gray-900 mb-3">Namnge arbetsområdet</h3>
+            <input
+              type="text"
+              value={courseTitle}
+              onChange={e => setCourseTitle(e.target.value)}
+              placeholder="Ange namn..."
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+            />
+            <button
+              onClick={async () => {
+                if (!courseTitle.trim()) return;
+                try {
+                  await api.put(`/courses/${id}`, { title: courseTitle.trim(), description: course?.description });
+                  navigate(`${basePath}/courses`);
+                } catch {
+                  setError('Kunde inte spara namn');
+                }
+              }}
+              disabled={!courseTitle.trim()}
+              className="bg-green-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              Skapa arbetsområde
+            </button>
           </div>
-        </div>
+        )}
 
       </div>
     </div>

@@ -355,15 +355,15 @@ export default function TeachMePage() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center gap-3 flex-wrap">
+    <div className="h-dvh bg-gray-50 flex flex-col overflow-hidden">
+      <div className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10 px-4 sm:px-6 py-3.5 flex items-center gap-3 flex-wrap">
         <button
-          onClick={() => { stopPlayback(); navigate(`${basePath}/courses/${id}`); }}
-          className="text-gray-400 hover:text-gray-600 text-sm"
+          onClick={() => { stopPlayback(); navigate(`${basePath}/courses`); }}
+          className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors text-lg leading-none"
         >←</button>
         <div className="flex-1 min-w-0">
-          <h2 className="font-semibold text-gray-900">Läs o lär</h2>
-          <p className="text-xs text-gray-400">Uppläsning av kursmaterial</p>
+          <h1 className="text-base font-bold text-gray-900">Läs o lär</h1>
+          <p className="text-xs text-gray-400 mt-0.5">{course?.title}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {!playing && !done && (

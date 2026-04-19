@@ -9,14 +9,11 @@ const router = express.Router();
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password } = req.body;
 
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Name, email and password are required' });
   }
-
-  const allowedRoles = ['teacher', 'student'];
-  const userRole = role && allowedRoles.includes(role) ? role : 'student';
 
   try {
     const existing = await db('users').where({ email }).first();
@@ -27,7 +24,7 @@ router.post('/register', async (req, res) => {
     const password_hash = await bcrypt.hash(password, 10);
 
     const [user] = await db('users')
-      .insert({ name, email, password_hash, role: userRole })
+      .insert({ name, email, password_hash, role: 'parent' })
       .returning(['id', 'name', 'email', 'role']);
 
     const token = jwt.sign(
@@ -48,11 +45,16 @@ router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
+    return res.status(400).json({ error: 'Email/username and password are required' });
   }
 
   try {
-    const user = await db('users').where({ email }).first();
+    // If input contains @, look up by email; otherwise by username
+    const isEmail = email.includes('@');
+    const user = isEmail
+      ? await db('users').where({ email }).first()
+      : await db('users').where({ username: email }).first();
+
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -70,7 +72,7 @@ router.post('/login', async (req, res) => {
 
     return res.json({
       token,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      user: { id: user.id, email: user.email, username: user.username, name: user.name, role: user.role },
     });
   } catch (err) {
     console.error('Login error:', err);

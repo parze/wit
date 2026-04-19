@@ -4,11 +4,10 @@ import api from '../../lib/api';
 import { getUser, clearAuth } from '../../lib/auth';
 
 export default function StudentsPage() {
-  const [students, setStudents] = useState([]);
+  const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', password: '', gender: '' });
+  const [form, setForm] = useState({ name: '', username: '', password: '', gender: '', birth_year: '' });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -17,68 +16,59 @@ export default function StudentsPage() {
   const user = getUser();
 
   useEffect(() => {
-    api.get('/students')
-      .then(r => setStudents(r.data))
+    api.get('/children')
+      .then(r => setChildren(r.data))
       .finally(() => setLoading(false));
   }, []);
-
-  const filtered = students.filter(s =>
-    s.name.toLowerCase().includes(search.toLowerCase()) ||
-    s.email.toLowerCase().includes(search.toLowerCase())
-  );
 
   const handleCreate = async e => {
     e.preventDefault();
     setError('');
     setCreating(true);
     try {
-      const { data } = await api.post('/students', form);
-      setStudents(s => [...s, data].sort((a, b) => a.name.localeCompare(b.name)));
-      setForm({ name: '', email: '', password: '', gender: '' });
+      const { data } = await api.post('/children', {
+        ...form,
+        birth_year: form.birth_year ? parseInt(form.birth_year) : undefined,
+      });
+      setChildren(s => [...s, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setForm({ name: '', username: '', password: '', gender: '', birth_year: '' });
       setShowForm(false);
       setSuccess(`${data.name} skapad!`);
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError(err.response?.data?.error || 'Kunde inte skapa elev');
+      setError(err.response?.data?.error || 'Kunde inte skapa barn');
     } finally {
       setCreating(false);
     }
   };
 
   const handleDelete = async id => {
-    if (!confirm('Ta bort elev?')) return;
+    if (!confirm('Ta bort barn?')) return;
     try {
-      await api.delete(`/students/${id}`);
-      setStudents(s => s.filter(st => st.id !== id));
+      await api.delete(`/children/${id}`);
+      setChildren(s => s.filter(st => st.id !== id));
     } catch (err) {
-      setError(err.response?.data?.error || 'Kunde inte ta bort elev');
+      setError(err.response?.data?.error || 'Kunde inte ta bort barn');
     }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar active="students" navigate={navigate} user={user} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar active="children" navigate={navigate} user={user} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 p-4 sm:p-8">
         <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <button onClick={() => setSidebarOpen(true)} className="sm:hidden text-gray-500 hover:text-gray-700">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
             </button>
-            <h2 className="text-2xl font-bold text-gray-900">Elever</h2>
+            <h2 className="text-2xl font-bold text-gray-900">Barn</h2>
           </div>
           <div className="flex gap-3 flex-wrap">
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Sök elev..."
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-56"
-            />
             <button
               onClick={() => setShowForm(s => !s)}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
             >
-              + Ny elev
+              + Nytt barn
             </button>
           </div>
         </div>
@@ -89,11 +79,11 @@ export default function StudentsPage() {
 
         {showForm && (
           <form onSubmit={handleCreate} className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-            <h3 className="font-semibold text-gray-900 mb-4">Skapa ny elev</h3>
+            <h3 className="font-semibold text-gray-900 mb-4">Skapa nytt barn</h3>
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-3 text-sm">{error}</div>
             )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Namn</label>
                 <input
@@ -105,11 +95,11 @@ export default function StudentsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">E-post</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Användarnamn</label>
                 <input
-                  type="email"
-                  value={form.email}
-                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  type="text"
+                  value={form.username}
+                  onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
@@ -123,6 +113,16 @@ export default function StudentsPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                   minLength={4}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Födelseår</label>
+                <input
+                  type="number"
+                  value={form.birth_year}
+                  onChange={e => setForm(f => ({ ...f, birth_year: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="t.ex. 2015"
                 />
               </div>
               <div>
@@ -145,7 +145,7 @@ export default function StudentsPage() {
                 disabled={creating}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
               >
-                {creating ? 'Skapar...' : 'Skapa elev'}
+                {creating ? 'Skapar...' : 'Skapa barn'}
               </button>
               <button
                 type="button"
@@ -160,10 +160,10 @@ export default function StudentsPage() {
 
         {loading ? (
           <div className="text-gray-400 text-sm">Laddar...</div>
-        ) : filtered.length === 0 ? (
+        ) : children.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <div className="text-4xl mb-3">👤</div>
-            <p>{search ? 'Inga elever matchar sökningen' : 'Inga elever ännu — skapa din första elev!'}</p>
+            <p>Inga barn ännu — skapa ditt första barn!</p>
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -171,18 +171,20 @@ export default function StudentsPage() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Namn</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">E-post</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Användarnamn</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Kön</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Registrerad</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Födelseår</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Skapad</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(s => (
+                {children.map(s => (
                   <tr key={s.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
-                    <td className="px-4 py-3 text-gray-500">{s.email}</td>
+                    <td className="px-4 py-3 text-gray-500">{s.username}</td>
                     <td className="px-4 py-3 text-gray-500">{s.gender || '–'}</td>
+                    <td className="px-4 py-3 text-gray-500">{s.birth_year || '–'}</td>
                     <td className="px-4 py-3 text-gray-400">
                       {new Date(s.created_at).toLocaleDateString('sv-SE')}
                     </td>
@@ -211,12 +213,11 @@ export function Sidebar({ active, navigate, user, open, onClose }) {
     navigate('/login');
   };
 
-  const navItems = user?.role === 'student'
-    ? [{ key: 'courses', label: 'Mina arbetsområden', path: '/student/courses' }]
+  const navItems = user?.role === 'child'
+    ? [{ key: 'courses', label: 'Mina arbetsområden', path: '/child/courses' }]
     : [
-        { key: 'courses', label: 'Mina arbetsområden', path: '/teacher/courses' },
-        { key: 'classes', label: 'Klasser', path: '/teacher/classes' },
-        { key: 'students', label: 'Elever', path: '/teacher/students' },
+        { key: 'courses', label: 'Mina arbetsområden', path: '/parent/courses' },
+        { key: 'children', label: 'Barn', path: '/parent/children' },
       ];
 
   return (

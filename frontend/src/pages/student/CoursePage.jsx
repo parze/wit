@@ -118,7 +118,7 @@ export default function CoursePage() {
 
   const fetchCourse = async () => {
     try {
-      const { data } = await api.get(`/student/courses/${id}`);
+      const { data } = await api.get(`/child/courses/${id}`);
       setCourse(data);
       setTtsOffered(data.enable_tts ?? false);
       setGoalAchievement(data.aiSummary?.goal_achievement ?? null);
@@ -146,7 +146,7 @@ export default function CoursePage() {
   const completeCourse = async () => {
     setCompleting(true);
     try {
-      const { data } = await api.post(`/student/courses/${id}/complete`);
+      const { data } = await api.post(`/child/courses/${id}/complete`);
       setStars(data.stars);
       setGoalAchievement(0);
       setMessages([]);
@@ -276,32 +276,36 @@ export default function CoursePage() {
   if (loading) return <div className="min-h-screen flex items-center justify-center text-gray-400">Laddar...</div>;
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+    <div className="h-dvh bg-gray-50 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="flex items-center gap-3 px-4 py-2.5">
-          <button onClick={() => navigate('/student/courses')} className="text-gray-400 hover:text-gray-600 text-lg leading-none">←</button>
-          <span className="text-sm font-medium text-gray-800 truncate flex-1">{course?.title}</span>
-          {ttsOffered && (
-            <button
-              onClick={() => toggleTTS(!ttsEnabled)}
-              className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap px-1"
-            >
-              {ttsEnabled ? 'Ljud av' : 'Ljud på'}
-            </button>
-          )}
-          {stars > 0 && <span className="text-sm mr-1">{'⭐'.repeat(stars)}</span>}
-          {toc.length > 0 && (
-            <span className={`text-xs font-medium whitespace-nowrap ${mode === 'forhör' ? 'text-purple-500' : 'text-blue-500'}`}>
-              {mode === 'forhör'
-                ? `${quizAnsweredSections.length}/${toc.length} frågor`
-                : `${aiSummary?.completed_sections?.length ?? 0}/${toc.length}`}
-            </span>
-          )}
+      <div className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+        <div className="flex items-center gap-3 px-4 py-3.5">
+          <button onClick={() => navigate('/child/courses')} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors text-lg leading-none">←</button>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-bold text-gray-900 truncate">{course?.title}</h1>
+            {toc.length > 0 && (
+              <p className={`text-xs mt-0.5 ${mode === 'forhör' ? 'text-purple-500' : 'text-gray-400'}`}>
+                {mode === 'forhör'
+                  ? `${quizAnsweredSections.length} av ${toc.length} frågor`
+                  : `Moment ${aiSummary?.completed_sections?.length ?? 0} av ${toc.length}`}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {stars > 0 && <span className="text-base">{'⭐'.repeat(stars)}</span>}
+            {ttsOffered && (
+              <button
+                onClick={() => toggleTTS(!ttsEnabled)}
+                className={`text-xs px-2.5 py-1 rounded-full transition-colors ${ttsEnabled ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+              >
+                {ttsEnabled ? '🔊 På' : '🔇 Av'}
+              </button>
+            )}
+          </div>
         </div>
-        <div className="h-1 bg-gray-100">
+        <div className="h-1.5 bg-gray-100">
           <div
-            className={`h-1 transition-all duration-500 ${mode === 'forhör' ? 'bg-purple-500' : 'bg-blue-500'}`}
+            className={`h-1.5 rounded-r-full transition-all duration-500 ${mode === 'forhör' ? 'bg-purple-500' : 'bg-blue-500'}`}
             style={{ width: `${activeProgress}%` }}
           />
         </div>
@@ -414,8 +418,8 @@ export default function CoursePage() {
         </aside>
 
         {/* Chat */}
-        <div className="flex-1 flex flex-col min-h-0">
-          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0">
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-3">
             {activeMessages.map((msg, i) => (
               <div
                 key={i}
@@ -423,10 +427,10 @@ export default function CoursePage() {
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-xs sm:max-w-lg md:max-w-2xl px-4 py-3 rounded-2xl text-sm md:text-lg leading-relaxed ${
+                  className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm md:text-lg leading-relaxed ${
                     msg.role === 'user'
                       ? `${mode === 'forhör' ? 'bg-purple-600' : 'bg-blue-600'} text-white rounded-tr-sm`
-                      : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm prose prose-sm prose-blue max-w-none'
+                      : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm prose prose-sm prose-blue [&>*]:max-w-full overflow-hidden break-words'
                   }`}
                 >
                   {msg.role === 'user' ? msg.content : msg.content === '' ? (
@@ -487,7 +491,7 @@ export default function CoursePage() {
               placeholder={mode === 'forhör' ? 'Skriv ditt svar...' : 'Skriv din fråga...'}
               disabled={sending || (mode === 'forhör' && quizDone)}
               autoFocus
-              className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-sm md:text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+              className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-base md:text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             />
             <button
               type="submit"

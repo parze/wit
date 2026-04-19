@@ -27,7 +27,7 @@ router.post('/:courseId', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'Message is required' });
   }
 
-  const isTeacher = req.user.role === 'teacher';
+  const isParent = req.user.role === 'parent';
 
   try {
     const t0 = Date.now();
@@ -39,10 +39,10 @@ router.post('/:courseId', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Course not found' });
     }
 
-    const isOwner = course.teacher_id === req.user.id;
+    const isOwner = course.parent_id === req.user.id;
     if (!isOwner) {
       const enrollment = await db('enrollments')
-        .where({ student_id: req.user.id, course_id: courseId })
+        .where({ child_id: req.user.id, course_id: courseId })
         .first();
       lap('db: enrollment');
       if (!enrollment) {
@@ -97,7 +97,7 @@ Regler:
       const quizSystemPrompt = `${quizPrompt}\n\n--- KURSMATERIAL ---\n${courseMaterial}\n--------------------`;
 
       const existingSession = await db('chat_sessions')
-        .where({ student_id: req.user.id, course_id: courseId })
+        .where({ child_id: req.user.id, course_id: courseId })
         .first();
       lap('db: quiz_session');
 
@@ -105,7 +105,7 @@ Regler:
 
       // Read answered sections from DB for everyone (teachers included, cleared on reset)
       const quizSummary = await db('ai_summaries')
-        .where({ student_id: req.user.id, course_id: courseId })
+        .where({ child_id: req.user.id, course_id: courseId })
         .select('quiz_answered_sections', 'quiz_score')
         .first();
       lap('db: quiz_summary');
@@ -167,7 +167,7 @@ Regler:
         label: 'förhör',
         enableTTS,
       });
-      io.to(`student:${studentId}`).emit('chat_tts_done');
+      io.to(`user:${studentId}`).emit('chat_tts_done');
 
       logger.info({ msg: quizAssistantMsg }, '[forhör:received]');
 
@@ -208,7 +208,7 @@ Regler:
             completed_sections: JSON.stringify([]),
           });
 
-          io.to(`student:${studentId}`).emit('quiz_progress', {
+          io.to(`user:${studentId}`).emit('quiz_progress', {
             quizScore: totalScore,
             quizAnsweredSections: newAnsweredSections,
             currentQuestion: nextUnanswered,
@@ -242,12 +242,12 @@ Regler:
               label: 'förhör-advance',
               enableTTS,
             });
-            io.to(`student:${studentId}`).emit('chat_tts_done');
+            io.to(`user:${studentId}`).emit('chat_tts_done');
 
             msgs.push({ role: 'assistant', content: advanceMsg });
 
             await db('chat_sessions')
-              .where({ student_id: studentId, course_id: courseId })
+              .where({ child_id: studentId, course_id: courseId })
               .update({ quiz_messages: JSON.stringify(msgs), updated_at: db.fn.now() });
 
             res.write(`data: ${JSON.stringify({ done: true, quizMessages: msgs })}\n\n`);
@@ -255,7 +255,7 @@ Regler:
             if (enableQuickReplies) {
               const momentContent = getMomentContent(courseMaterial, nextUnanswered, toc);
               const quickReplies = await generateQuickReplies(anthropic, momentContent, advanceMsg, 5);
-              io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
+              io.to(`user:${studentId}`).emit('quick_replies', { quickReplies });
             }
           } else {
             res.write(`data: ${JSON.stringify({ done: true, quizMessages: msgs })}\n\n`);
@@ -263,7 +263,7 @@ Regler:
             if (nextUnanswered !== null && enableQuickReplies) {
               const momentContent = getMomentContent(courseMaterial, nextUnanswered, toc);
               const quickReplies = await generateQuickReplies(anthropic, momentContent, cleanedQuizMsg, 5);
-              io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
+              io.to(`user:${studentId}`).emit('quick_replies', { quickReplies });
             }
           }
         } catch (quizErr) {
@@ -283,7 +283,7 @@ Regler:
 
     // Load existing chat session or start fresh
     const existingSession = await db('chat_sessions')
-      .where({ student_id: req.user.id, course_id: courseId })
+      .where({ child_id: req.user.id, course_id: courseId })
       .first();
     lap('db: chat_session');
 
@@ -303,7 +303,7 @@ Regler:
 
     // Fetch current Moment from last analysis (both students and teachers in test mode)
     const lastSummary = await db('ai_summaries')
-      .where({ student_id: req.user.id, course_id: courseId })
+      .where({ child_id: req.user.id, course_id: courseId })
       .select('current_section', 'completed_sections')
       .first();
     lap('db: last_summary');
@@ -358,7 +358,7 @@ Regler:
       label: 'lär',
       enableTTS,
     });
-    io.to(`student:${studentId}`).emit('chat_tts_done');
+    io.to(`user:${studentId}`).emit('chat_tts_done');
 
     logger.info({ msg: assistantMessage }, '[lär:received]');
 
@@ -381,18 +381,18 @@ Regler:
     // Track student progress (skip for owners testing their own course)
     if (!isOwner) {
       const existingProgress = await db('section_progress')
-        .where({ student_id: req.user.id, course_id: courseId })
+        .where({ child_id: req.user.id, course_id: courseId })
         .first();
 
       if (existingProgress) {
         if (existingProgress.status === 'not_started') {
           await db('section_progress')
-            .where({ student_id: req.user.id, course_id: courseId })
+            .where({ child_id: req.user.id, course_id: courseId })
             .update({ status: 'in_progress', updated_at: db.fn.now() });
         }
       } else {
         await db('section_progress').insert({
-          student_id: req.user.id,
+          child_id: req.user.id,
           course_id: courseId,
           status: 'in_progress',
         });
@@ -430,7 +430,7 @@ Regler:
           completed_sections: JSON.stringify(completedSections),
         });
 
-        io.to(`student:${studentId}`).emit('analysis_complete', {
+        io.to(`user:${studentId}`).emit('analysis_complete', {
           goalAchievement,
           summary: '',
           reasons: '',
@@ -464,12 +464,12 @@ Regler:
             startSeq: ttsSeqAfterMain,
             enableTTS,
           });
-          io.to(`student:${studentId}`).emit('chat_tts_done');
+          io.to(`user:${studentId}`).emit('chat_tts_done');
 
           messages.push({ role: 'assistant', content: advanceMsg });
 
           await db('chat_sessions')
-            .where({ student_id: studentId, course_id: courseId })
+            .where({ child_id: studentId, course_id: courseId })
             .update({ messages: JSON.stringify(messages), updated_at: db.fn.now() });
 
           res.write(`data: ${JSON.stringify({ done: true, messages })}\n\n`);
@@ -478,12 +478,12 @@ Regler:
           if (enableQuickReplies) {
             const momentContent = getMomentContent(courseMaterial, newCurrentSection, toc);
             const quickReplies = await generateQuickReplies(anthropic, momentContent, advanceMsg);
-            io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
+            io.to(`user:${studentId}`).emit('quick_replies', { quickReplies });
           }
 
         } else if (momentComplete && isLastMoment) {
           // Last Moment completed – course done
-          io.to(`student:${studentId}`).emit('course_complete', { courseId });
+          io.to(`user:${studentId}`).emit('course_complete', { courseId });
           res.write(`data: ${JSON.stringify({ done: true, messages })}\n\n`);
 
         } else {
@@ -493,7 +493,7 @@ Regler:
 
           if (enableQuickReplies) {
             const quickReplies = await generateQuickReplies(anthropic, momentContent, cleanedMessage);
-            io.to(`student:${studentId}`).emit('quick_replies', { quickReplies });
+            io.to(`user:${studentId}`).emit('quick_replies', { quickReplies });
           }
 
           res.write(`data: ${JSON.stringify({ done: true, messages })}\n\n`);

@@ -7,12 +7,10 @@ const logger = require('./src/logger');
 const authRoutes = require('./src/routes/auth');
 const coursesRoutes = require('./src/routes/courses');
 const documentsRoutes = require('./src/routes/documents');
-const studentRoutes = require('./src/routes/student');
+const childRoutes = require('./src/routes/child');
 const chatRoutes = require('./src/routes/chat');
-const teacherRoutes = require('./src/routes/teacher');
-const studentsRoutes = require('./src/routes/students');
-const classesRoutes = require('./src/routes/classes');
-const aiTeachersRoutes = require('./src/routes/aiTeachers');
+const parentRoutes = require('./src/routes/parent');
+const childrenRoutes = require('./src/routes/children');
 
 const http = require('http');
 const { Server } = require('socket.io');
@@ -23,8 +21,8 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 io.on('connection', socket => {
-  const { studentId } = socket.handshake.query;
-  if (studentId) socket.join(`student:${studentId}`);
+  const { userId } = socket.handshake.query;
+  if (userId) socket.join(`user:${userId}`);
   registerTTSHandlers(io, socket);
 });
 
@@ -60,29 +58,19 @@ app.delete('/api/documents/:id', (req, res, next) => {
   documentsRoutes(req, res, next);
 });
 
-// GET /api/student/courses
-// GET /api/student/courses/:id
-// POST /api/student/courses/:id/complete
-app.use('/api/student', studentRoutes);
+// GET /api/child/courses
+// GET /api/child/courses/:id
+// POST /api/child/courses/:id/complete
+app.use('/api/child', childRoutes);
 
 // POST /api/chat/:courseId
 app.use('/api/chat', chatRoutes);
 
-// GET /api/teacher/courses/:id/progress
-app.use('/api/teacher', teacherRoutes);
+// GET /api/parent/courses/:id/progress
+app.use('/api/parent', parentRoutes);
 
-// GET /api/students
-app.use('/api/students', studentsRoutes);
-
-// GET/POST /api/classes
-// POST /api/classes/:id/members
-// DELETE /api/classes/:id/members/:studentId
-// POST /api/classes/:id/courses
-// DELETE /api/classes/:id/courses/:courseId
-app.use('/api/classes', classesRoutes);
-
-// GET/POST/PUT/DELETE /api/ai-teachers
-app.use('/api/ai-teachers', aiTeachersRoutes);
+// GET /api/children
+app.use('/api/children', childrenRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
