@@ -54,11 +54,14 @@ function getHeadingLevel(para) {
 
 function stripMarkdown(para) {
   return para
-    .replace(/^#{1,6}\s+/, '')
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/\*(.+?)\*/g, '$1')
-    .replace(/__(.+?)__/g, '$1')
-    .replace(/_(.+?)_/g, '$1');
+    .replace(/#{1,6}\s+/g, '')
+    .replace(/\*{1,2}([^*\n]+)\*{1,2}/g, '$1')
+    .replace(/`[^`]+`/g, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
+    .replace(/\n+/g, ' ')
+    .trim();
 }
 
 const headingClass = {
@@ -95,7 +98,7 @@ export default function TeachMePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const user = getUser();
-  const basePath = user?.role === 'teacher' ? '/teacher' : '/student';
+  const basePath = user?.role === 'parent' ? '/parent' : '/child';
 
   const [material, setMaterial] = useState('');
   const [paragraphs, setParagraphs] = useState([]);
@@ -110,13 +113,18 @@ export default function TeachMePage() {
 
   const chunksRef = useRef([]);
   const alignmentsRef = useRef([]);
-  const audioRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const sourceRef = useRef(null);
+  const startTimeRef = useRef(0);
+  const pauseOffsetRef = useRef(0);
+  const audioBufferRef = useRef(null);
   const stoppedRef = useRef(false);
   const pausedRef = useRef(false);
   const paragraphsRef = useRef([]);
   const wordsRef = useRef([]);
   const rafRef = useRef(null);
   const paragraphRefs = useRef([]);
+  const playResolveRef = useRef(null);
 
   useEffect(() => {
     api.get(`/courses/${id}`).then(({ data }) => {
@@ -136,15 +144,22 @@ export default function TeachMePage() {
     }
   }, [currentParagraph]);
 
+  function getAudioCtx() {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return audioCtxRef.current;
+  }
+
   const stopRAF = useCallback(() => {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
   }, []);
 
   const startRAF = useCallback(() => {
     const tick = () => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      const t = audio.currentTime;
+      const ctx = audioCtxRef.current;
+      if (!ctx || !sourceRef.current) return;
+      const t = ctx.currentTime - startTimeRef.current + pauseOffsetRef.current;
       const words = wordsRef.current;
       let found = -1;
       for (let i = 0; i < words.length; i++) {
@@ -160,29 +175,52 @@ export default function TeachMePage() {
   const playAudio = useCallback((audioChunks) => {
     return new Promise((resolve) => {
       if (stoppedRef.current || audioChunks.length === 0) { resolve(); return; }
+      const ctx = getAudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
       const arrays = audioChunks.map(base64ToUint8Array);
-      const blob = new Blob(arrays, { type: 'audio/mpeg' });
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      const cleanup = () => {
-        stopRAF();
-        URL.revokeObjectURL(url);
-        audioRef.current = null;
-        setActiveWordIndex(-1);
+      const totalLen = arrays.reduce((s, a) => s + a.length, 0);
+      const merged = new Uint8Array(totalLen);
+      let offset = 0;
+      for (const a of arrays) { merged.set(a, offset); offset += a.length; }
+
+      ctx.decodeAudioData(merged.buffer.slice(0)).then(buffer => {
+        if (stoppedRef.current) { resolve(); return; }
+        audioBufferRef.current = buffer;
+        pauseOffsetRef.current = 0;
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        sourceRef.current = source;
+        playResolveRef.current = resolve;
+        source.onended = () => {
+          stopRAF();
+          sourceRef.current = null;
+          audioBufferRef.current = null;
+          playResolveRef.current = null;
+          setActiveWordIndex(-1);
+          resolve();
+        };
+        startTimeRef.current = ctx.currentTime;
+        startRAF();
+        source.start(0, pauseOffsetRef.current);
+      }).catch(err => {
+        console.error('[TeachMe TTS] Failed to decode audio for paragraph:', err);
+        sourceRef.current = null;
+        audioBufferRef.current = null;
         resolve();
-      };
-      audio.onended = cleanup;
-      audio.onerror = cleanup;
-      startRAF();
-      audio.play().catch(cleanup);
+      });
     });
   }, [startRAF, stopRAF]);
 
   const stopPlayback = useCallback(() => {
     stoppedRef.current = true;
     stopRAF();
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if (sourceRef.current) {
+      try { sourceRef.current.stop(); } catch {}
+      sourceRef.current = null;
+    }
+    audioBufferRef.current = null;
+    if (playResolveRef.current) { playResolveRef.current(); playResolveRef.current = null; }
     getSocket().emit('tts_stop');
     setPlaying(false);
     setPaused(false);
@@ -194,6 +232,9 @@ export default function TeachMePage() {
 
   const startPlayback = useCallback(() => {
     if (playing || !material) return;
+    // Unlock AudioContext on user gesture (critical for iOS)
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
     const socket = getSocket();
     stoppedRef.current = false;
     pausedRef.current = false;
@@ -277,14 +318,34 @@ export default function TeachMePage() {
 
   const pausePlayback = () => {
     if (!playing) return;
+    const ctx = audioCtxRef.current;
     if (!paused) {
       pausedRef.current = true;
       stopRAF();
-      audioRef.current?.pause();
+      if (sourceRef.current && ctx) {
+        pauseOffsetRef.current += ctx.currentTime - startTimeRef.current;
+        try { sourceRef.current.stop(); } catch {}
+        sourceRef.current = null;
+      }
       setPaused(true);
     } else {
       pausedRef.current = false;
-      if (audioRef.current) { startRAF(); audioRef.current.play(); }
+      if (audioBufferRef.current && ctx) {
+        const source = ctx.createBufferSource();
+        source.buffer = audioBufferRef.current;
+        source.connect(ctx.destination);
+        sourceRef.current = source;
+        source.onended = () => {
+          stopRAF();
+          sourceRef.current = null;
+          audioBufferRef.current = null;
+          setActiveWordIndex(-1);
+          if (playResolveRef.current) { playResolveRef.current(); playResolveRef.current = null; }
+        };
+        startTimeRef.current = ctx.currentTime;
+        startRAF();
+        source.start(0, pauseOffsetRef.current);
+      }
       setPaused(false);
     }
   };
