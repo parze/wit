@@ -43,6 +43,8 @@ export default function CoursePage() {
   const lastAssistantRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
+  const scrollBudgetRef = useRef(0);
+  const isAutoScrollingRef = useRef(false);
 
   // TTS
   const { ttsEnabled, ttsOffered, setTtsOffered, unlockAudio, resetTTS, toggleTTS, onTTSChunk, onTTSSkip, onTTSDone } = useTTS();
@@ -100,38 +102,47 @@ export default function CoursePage() {
     };
   }, []);
 
-  // Scroll to latest message
+  // User scrolls to near bottom → give another page of auto-scroll
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const onScroll = () => {
+      if (isAutoScrollingRef.current) return;
+      const distFromBottom = container.scrollHeight - container.clientHeight - container.scrollTop;
+      if (distFromBottom < 80) {
+        scrollBudgetRef.current = 0;
+      }
+    };
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => container.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Auto-scroll: one page at a time during streaming
   useEffect(() => {
     const active = mode === 'forhör' ? quizMessages : messages;
     if (active.length === 0) return;
     const last = active[active.length - 1];
-    if (last.role === 'assistant') {
-      lastAssistantRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, quizMessages, mode]);
 
-  // Re-scroll when quick replies appear – scroll down as far as possible
-  // but not so far that the last assistant message's top goes off-screen
-  useEffect(() => {
-    if (quickReplies.length > 0) {
+    if (last.role === 'assistant' && sending) {
       const container = messagesContainerRef.current;
-      const lastAssistant = lastAssistantRef.current;
       if (!container) return;
-
-      if (lastAssistant) {
-        const containerRect = container.getBoundingClientRect();
-        const lastMsgRect = lastAssistant.getBoundingClientRect();
-        const distFromTop = lastMsgRect.top - containerRect.top;
-        const scrollToBottom = container.scrollHeight - container.clientHeight - container.scrollTop;
-        const scrollAmount = Math.min(scrollToBottom, Math.max(0, distFromTop));
-        container.scrollBy({ top: scrollAmount, behavior: 'smooth' });
-      } else {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }
+      const maxScroll = container.scrollHeight - container.clientHeight;
+      const delta = maxScroll - container.scrollTop;
+      if (delta <= 0) return;
+      if (scrollBudgetRef.current >= container.clientHeight * 0.75) return;
+      scrollBudgetRef.current += delta;
+      isAutoScrollingRef.current = true;
+      container.scrollTop = maxScroll;
+      isAutoScrollingRef.current = false;
+    } else if (last.role === 'assistant') {
+      scrollBudgetRef.current = 0;
+    } else {
+      scrollBudgetRef.current = 0;
+      const container = messagesContainerRef.current;
+      if (container) container.scrollTop = container.scrollHeight - container.clientHeight;
     }
-  }, [quickReplies]);
+  }, [messages, quizMessages, mode, sending]);
+
 
   // Trigger quiz intro when switching to quiz tab for the first time
   useEffect(() => {
@@ -201,6 +212,12 @@ export default function CoursePage() {
         await streamMessage({ intro: true });
         return;
       }
+
+      // Scroll to bottom after loading existing messages
+      requestAnimationFrame(() => {
+        const container = messagesContainerRef.current;
+        if (container) container.scrollTop = container.scrollHeight - container.clientHeight;
+      });
     } catch {
       setError('Kunde inte hämta arbetsområde');
     } finally {
@@ -251,6 +268,7 @@ export default function CoursePage() {
 
   const streamMessage = async (body) => {
     const isQuiz = body.mode === 'forhör';
+    scrollBudgetRef.current = 0;
     setSending(true);
     if (isQuiz) {
       setQuizMessages(m => [...m, { role: 'assistant', content: '' }]);
@@ -306,7 +324,7 @@ export default function CoursePage() {
               setMessages(payload.messages);
             }
             setSending(false);
-            if (!body.intro) inputRef.current?.focus();
+            if (!body.intro) inputRef.current?.focus({ preventScroll: true });
           }
         }
       }
@@ -319,7 +337,7 @@ export default function CoursePage() {
       }
     } finally {
       setSending(false);
-      if (!body.intro) inputRef.current?.focus();
+      if (!body.intro) inputRef.current?.focus({ preventScroll: true });
     }
   };
 
@@ -528,64 +546,64 @@ export default function CoursePage() {
                 </div>
               </div>
             ))}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {!isParent && mode === 'learn' && goalAchievement >= 80 && (
-            <div className="border-t border-gray-200 bg-white px-4 py-2">
-              <button
-                onClick={completeCourse}
-                disabled={completing}
-                className="w-full bg-green-500 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-green-600 disabled:opacity-50 transition-colors"
-              >
-                {completing ? 'Sparar...' : '⭐ Jag är klar – börja om från början'}
-              </button>
-            </div>
-          )}
-
-          {quickReplies.length > 0 && (
-            <div className="bg-white border-t border-gray-100 px-4 py-2 flex flex-wrap gap-2">
-              {quickReplies.map((reply, i) => (
+            {!isParent && mode === 'learn' && goalAchievement >= 80 && (
+              <div className="px-2 py-2">
                 <button
-                  key={i}
-                  onClick={() => sendQuickReply(reply)}
-                  disabled={sending}
-                  className={`text-sm px-3 py-1.5 rounded-full border disabled:opacity-50 transition-colors ${
-                    mode === 'forhör'
-                      ? 'border-purple-300 text-purple-600 hover:bg-purple-50'
-                      : 'border-blue-300 text-blue-600 hover:bg-blue-50'
+                  onClick={completeCourse}
+                  disabled={completing}
+                  className="w-full bg-green-500 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-green-600 disabled:opacity-50 transition-colors"
+                >
+                  {completing ? 'Sparar...' : '⭐ Jag är klar – börja om från början'}
+                </button>
+              </div>
+            )}
+
+            {!sending && quickReplies.length > 0 && (
+              <div className="px-2 py-2 flex flex-wrap gap-2 animate-fade-in">
+                {quickReplies.map((reply, i) => (
+                  <button
+                    key={i}
+                    onClick={() => sendQuickReply(reply)}
+                    className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${
+                      mode === 'forhör'
+                        ? 'border-purple-300 text-purple-600 hover:bg-purple-50'
+                        : 'border-blue-300 text-blue-600 hover:bg-blue-50'
+                    }`}
+                  >
+                    {reply}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!sending && (
+              <form
+                onSubmit={sendMessage}
+                className="px-2 py-3 flex gap-2 animate-fade-in"
+              >
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  placeholder={mode === 'forhör' ? 'Skriv ditt svar...' : 'Skriv din fråga...'}
+                  disabled={mode === 'forhör' && quizDone}
+                  className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-base md:text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                />
+                <button
+                  type="submit"
+                  disabled={!input.trim() || (mode === 'forhör' && quizDone)}
+                  className={`text-white px-5 py-3 rounded-xl text-sm md:text-lg font-medium disabled:opacity-50 transition-colors ${
+                    mode === 'forhör' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'
                   }`}
                 >
-                  {reply}
+                  Skicka
                 </button>
-              ))}
-            </div>
-          )}
+              </form>
+            )}
 
-          <form
-            onSubmit={sendMessage}
-            className="border-t border-gray-200 bg-white px-4 py-3 flex gap-2"
-          >
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder={mode === 'forhör' ? 'Skriv ditt svar...' : 'Skriv din fråga...'}
-              disabled={sending || (mode === 'forhör' && quizDone)}
-              autoFocus
-              className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-base md:text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={sending || !input.trim() || (mode === 'forhör' && quizDone)}
-              className={`text-white px-5 py-3 rounded-xl text-sm md:text-lg font-medium disabled:opacity-50 transition-colors ${
-                mode === 'forhör' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'
-              }`}
-            >
-              Skicka
-            </button>
-          </form>
+            <div ref={messagesEndRef} />
+          </div>
         </div>
       </div>
     </div>
