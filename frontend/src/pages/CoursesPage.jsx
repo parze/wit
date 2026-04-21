@@ -31,6 +31,17 @@ export default function CoursesPage() {
     }
   };
 
+  const handleDelete = async (e, courseId) => {
+    e.stopPropagation();
+    if (!confirm('Vill du verkligen radera detta arbetsområde? All data raderas.')) return;
+    try {
+      await api.delete(`/courses/${courseId}`);
+      setCourses(prev => prev.filter(c => c.id !== courseId));
+    } catch (err) {
+      setError(err.response?.data?.error || 'Kunde inte radera arbetsområde');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar active="courses" navigate={navigate} user={user} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -95,6 +106,15 @@ export default function CoursesPage() {
                       <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">{course.description}</p>
                     )}
                   </div>
+                  {isParent && (
+                    <button
+                      onClick={e => handleDelete(e, course.id)}
+                      className="ml-2 p-1 text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"
+                      title="Radera arbetsområde"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  )}
                   {!isParent && (course.stars > 0 || course.goal_achievement > 0) && (
                     <div className="flex items-center gap-1.5 ml-3 flex-shrink-0">
                       {course.stars > 0 && (
