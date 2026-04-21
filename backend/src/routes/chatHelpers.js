@@ -213,6 +213,17 @@ async function generateQuickReplies(anthropic, momentContent, lastMessage, count
   }
 }
 
+/**
+ * Persist quick replies on the last assistant message in a chat session.
+ */
+async function persistQuickReplies(db, studentId, courseId, field, messages, quickReplies) {
+  const last = messages[messages.length - 1];
+  if (last?.role === 'assistant') last.quickReplies = quickReplies;
+  await db('chat_sessions')
+    .where({ child_id: studentId, course_id: courseId })
+    .update({ [field]: JSON.stringify(messages), updated_at: db.fn.now() });
+}
+
 module.exports = {
   stripMarkdown,
   emitChatTTS,
@@ -222,4 +233,5 @@ module.exports = {
   upsertChatSession,
   getMomentContent,
   generateQuickReplies,
+  persistQuickReplies,
 };

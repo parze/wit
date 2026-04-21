@@ -13,6 +13,7 @@ const {
   upsertChatSession,
   getMomentContent,
   generateQuickReplies,
+  persistQuickReplies,
 } = require('./chatHelpers');
 
 const router = express.Router();
@@ -131,13 +132,14 @@ Regler:
 
       const trimmedMsgs = msgs.length > 20 ? msgs.slice(-20) : msgs;
 
+      const apiQuizMsgs = trimmedMsgs.map(({ role, content }) => ({ role, content }));
       const sonnetMsgs = (currentMoment && !intro)
         ? [
             { role: 'user', content: `[Förhörskontext: Eleven svarade nu på en fråga om Moment "${currentMoment}".${contentBlock}\nGe feedback och skriv antingen [QUIZ_POÄNG:X.XX] om du vill ställa fler frågor om samma Moment, eller [MOMENT_SLUT:X.XX] om Momentet är tillräckligt täckt (0.0=helt fel, 0.5=delvis, 1.0=perfekt). ${nextMoment ? 'Vid [MOMENT_SLUT]: skriv ENBART kortfattad feedback + [MOMENT_SLUT] – övergången sköts automatiskt.' : 'Vid [MOMENT_SLUT]: alla Moment klara – avsluta förhöret och sammanfatta totalpoängen.'}]` },
             { role: 'assistant', content: 'Förstått.' },
-            ...trimmedMsgs,
+            ...apiQuizMsgs,
           ]
-        : trimmedMsgs;
+        : apiQuizMsgs;
 
       setSSEHeaders(res);
 
@@ -221,7 +223,7 @@ Regler:
             res.write(`data: ${JSON.stringify({ newMessage: true })}\n\n`);
 
             const advancePrompt = `[Momentövergång: Moment "${currentMoment}" klart. Presentera kort Moment "${nextUnanswered}" och ställ direkt den FÖRSTA frågan. Skriv INTE [QUIZ_POÄNG] eller [MOMENT_SLUT].]`;
-            const advanceMsgs = [...msgs, { role: 'user', content: advancePrompt }];
+            const advanceMsgs = [...msgs.map(({ role, content }) => ({ role, content })), { role: 'user', content: advancePrompt }];
             const trimmedAdvance = advanceMsgs.length > 20 ? advanceMsgs.slice(-20) : advanceMsgs;
 
             const advanceStream = anthropic.messages.stream({
@@ -255,7 +257,8 @@ Regler:
             if (enableQuickReplies) {
               const momentContent = getMomentContent(courseMaterial, nextUnanswered, toc);
               const quickReplies = await generateQuickReplies(anthropic, momentContent, advanceMsg, 5);
-              io.to(`user:${studentId}`).emit('quick_replies', { quickReplies });
+              io.to(`user:${studentId}`).emit('quick_replies', { quickReplies, mode: 'forhör' });
+              if (quickReplies.length) await persistQuickReplies(db, studentId, courseId, 'quiz_messages', msgs, quickReplies);
             }
           } else {
             res.write(`data: ${JSON.stringify({ done: true, quizMessages: msgs })}\n\n`);
@@ -263,7 +266,8 @@ Regler:
             if (nextUnanswered !== null && enableQuickReplies) {
               const momentContent = getMomentContent(courseMaterial, nextUnanswered, toc);
               const quickReplies = await generateQuickReplies(anthropic, momentContent, cleanedQuizMsg, 5);
-              io.to(`user:${studentId}`).emit('quick_replies', { quickReplies });
+              io.to(`user:${studentId}`).emit('quick_replies', { quickReplies, mode: 'forhör' });
+              if (quickReplies.length) await persistQuickReplies(db, studentId, courseId, 'quiz_messages', msgs, quickReplies);
             }
           }
         } catch (quizErr) {
@@ -322,13 +326,14 @@ Regler:
     const learnContentBlock = currentMomentContent ? `\n\nInnehåll för detta Moment:\n${currentMomentContent}\n` : '';
 
     // Prepend Moment context to messages sent to Sonnet (never saved to DB)
+    const apiMessages = trimmedMessages.map(({ role, content }) => ({ role, content }));
     const sonnetMessages = currentMoment
       ? [
           { role: 'user', content: `[Momentkontext: Eleven arbetar nu med Moment "${currentMoment}".${learnContentBlock}\nUndervisa berättande och narrativt – förklara ett begrepp i taget med konkreta exempel och levande beskrivningar. Täck allt innehåll i Momentet. Avsluta ALLTID med en fråga om något du PRECIS beskrivit i detta svar (inte om något nytt eller framtida) – UTOM i det svar där du skriver [MOMENT_KLAR]: skriv då [MOMENT_KLAR] allra sist utan någon fråga efteråt. Haiku genererar 2 svarsalternativ till din fråga – tänk på att frågan ska ha ett tydligt rätt och fel svar. När du har täckt det viktigaste innehållet, skriv exakt [MOMENT_KLAR] på en EGEN rad allra sist i ditt svar. Fråga INTE eleven om de vill fortsätta.${nextMoment ? ` Nästa Moment är "${nextMoment}".` : ''}]` },
           { role: 'assistant', content: 'Förstått, jag fokuserar på detta Moment.' },
-          ...trimmedMessages,
+          ...apiMessages,
         ]
-      : trimmedMessages;
+      : apiMessages;
 
     setSSEHeaders(res);
 
@@ -444,7 +449,7 @@ Regler:
           res.write(`data: ${JSON.stringify({ newMessage: true })}\n\n`);
 
           const advancePrompt = `[Momentövergång: Moment "${currentMoment}" klart. Introducera nästa Moment "${newCurrentSection}" med 2–3 berättande meningar och avsluta med EN fråga om något du precis beskrivit (så att eleven kan svara med ett av de quick replies som genereras). Skriv INTE [MOMENT_KLAR].]`;
-          const advanceMessages = [...messages, { role: 'user', content: advancePrompt }];
+          const advanceMessages = [...messages.map(({ role, content }) => ({ role, content })), { role: 'user', content: advancePrompt }];
           const trimmedAdvance = advanceMessages.length > 20 ? advanceMessages.slice(-20) : advanceMessages;
 
           const advanceStream = anthropic.messages.stream({
@@ -478,7 +483,8 @@ Regler:
           if (enableQuickReplies) {
             const momentContent = getMomentContent(courseMaterial, newCurrentSection, toc);
             const quickReplies = await generateQuickReplies(anthropic, momentContent, advanceMsg);
-            io.to(`user:${studentId}`).emit('quick_replies', { quickReplies });
+            io.to(`user:${studentId}`).emit('quick_replies', { quickReplies, mode: 'learn' });
+            if (quickReplies.length) await persistQuickReplies(db, studentId, courseId, 'messages', messages, quickReplies);
           }
 
         } else if (momentComplete && isLastMoment) {
@@ -493,7 +499,8 @@ Regler:
 
           if (enableQuickReplies) {
             const quickReplies = await generateQuickReplies(anthropic, momentContent, cleanedMessage);
-            io.to(`user:${studentId}`).emit('quick_replies', { quickReplies });
+            io.to(`user:${studentId}`).emit('quick_replies', { quickReplies, mode: 'learn' });
+            if (quickReplies.length) await persistQuickReplies(db, studentId, courseId, 'messages', messages, quickReplies);
           }
 
           res.write(`data: ${JSON.stringify({ done: true, messages })}\n\n`);

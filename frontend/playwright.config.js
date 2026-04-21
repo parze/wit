@@ -19,7 +19,7 @@ export default defineConfig({
     {
       name: 'child',
       use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
-      testMatch: ['**/child.spec.js'],
+      testMatch: ['**/child.spec.js', '**/quick-replies.spec.js'],
     },
   ],
 });

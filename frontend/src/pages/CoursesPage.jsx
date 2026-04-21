@@ -1,32 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../../lib/api';
-import { getUser } from '../../lib/auth';
-import { Sidebar } from './StudentsPage';
+import api from '../lib/api';
+import { getUser } from '../lib/auth';
+import Sidebar from '../components/Sidebar';
 
-export default function TeacherCoursesPage() {
+export default function CoursesPage() {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
   const user = getUser();
-  const basePath = user?.role === 'parent' ? '/parent' : '/child';
+  const isParent = user?.role === 'parent';
+  const endpoint = isParent ? '/courses' : '/child/courses';
+  const basePath = isParent ? '/parent' : '/child';
 
   useEffect(() => {
-    fetchCourses();
+    api.get(endpoint)
+      .then(r => setCourses(r.data))
+      .catch(() => setError('Kunde inte hämta arbetsområden'))
+      .finally(() => setLoading(false));
   }, []);
-
-  const fetchCourses = async () => {
-    try {
-      const { data } = await api.get('/courses');
-      setCourses(data);
-    } catch (err) {
-      setError('Kunde inte hämta arbetsområden');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCreate = async () => {
     try {
@@ -41,26 +35,29 @@ export default function TeacherCoursesPage() {
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar active="courses" navigate={navigate} user={user} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      {/* Main content */}
       <div className="flex-1 p-4 sm:p-8">
         <div className="flex items-center gap-2 mb-4">
           <button onClick={() => setSidebarOpen(true)} className="sm:hidden text-gray-500 hover:text-gray-700">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900 flex-1">Mina arbetsområden</h2>
+          {isParent && (
+            <button
+              onClick={handleCreate}
+              className="hidden sm:inline-flex bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              + Nytt arbetsområde
+            </button>
+          )}
+        </div>
+        {isParent && (
           <button
             onClick={handleCreate}
-            className="hidden sm:inline-flex bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            className="sm:hidden w-full bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors mb-4"
           >
             + Nytt arbetsområde
           </button>
-        </div>
-        <button
-          onClick={handleCreate}
-          className="sm:hidden w-full bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors mb-4"
-        >
-          + Nytt arbetsområde
-        </button>
+        )}
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-4 text-sm">
@@ -73,19 +70,49 @@ export default function TeacherCoursesPage() {
         ) : courses.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <div className="text-4xl mb-3">📚</div>
-            <p>Inga arbetsområden ännu. Skapa ditt första!</p>
+            <p>{isParent ? 'Inga arbetsområden ännu. Skapa ditt första!' : 'Du har inga arbetsområden ännu'}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {courses.map(course => (
               <div
                 key={course.id}
-                onClick={course.has_compiled_material ? undefined : () => navigate(`/parent/courses/${course.id}`)}
-                className={`bg-white rounded-xl border border-gray-200 p-5 transition-all ${course.has_compiled_material ? '' : 'cursor-pointer hover:shadow-md hover:border-blue-200'}`}
+                onClick={
+                  course.has_compiled_material
+                    ? undefined
+                    : isParent
+                      ? () => navigate(`/parent/courses/${course.id}`)
+                      : () => navigate(`/child/courses/${course.id}`)
+                }
+                className={`bg-white rounded-xl border border-gray-200 p-5 transition-all ${
+                  course.has_compiled_material ? '' : 'cursor-pointer hover:shadow-md hover:border-blue-200'
+                }`}
               >
-                <h3 className="font-semibold text-gray-900 mb-2">{course.title}</h3>
-                {course.description && (
-                  <p className="text-sm text-gray-500 line-clamp-2">{course.description}</p>
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-gray-900 truncate">{course.title}</h3>
+                    {course.description && (
+                      <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">{course.description}</p>
+                    )}
+                  </div>
+                  {!isParent && (course.stars > 0 || course.goal_achievement > 0) && (
+                    <div className="flex items-center gap-1.5 ml-3 flex-shrink-0">
+                      {course.stars > 0 && (
+                        <span className="text-sm">{'⭐'.repeat(Math.min(course.stars, 5))}</span>
+                      )}
+                      {course.goal_achievement > 0 && (
+                        <span className="text-xs text-blue-500 font-medium">{course.goal_achievement}%</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {!isParent && course.goal_achievement > 0 && (
+                  <div className="h-1 bg-gray-100 rounded-full overflow-hidden mb-3">
+                    <div
+                      className="h-1 bg-blue-500 rounded-full transition-all duration-500"
+                      style={{ width: `${course.goal_achievement}%` }}
+                    />
+                  </div>
                 )}
                 {course.has_compiled_material && (
                   <div className="mt-4 grid grid-cols-3 gap-2">

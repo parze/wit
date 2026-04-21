@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import api from '../../lib/api';
 import { getUser } from '../../lib/auth';
-import { Sidebar } from './StudentsPage';
+import Sidebar from '../../components/Sidebar';
 
 export default function HjalplararePage() {
   const navigate = useNavigate();

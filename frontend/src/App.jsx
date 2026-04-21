@@ -4,13 +4,11 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
-import TeacherCoursesPage from './pages/teacher/TeacherCoursesPage';
+import CoursesPage from './pages/CoursesPage';
 import CourseEditorPage from './pages/teacher/CourseEditorPage';
 import DashboardPage from './pages/teacher/DashboardPage';
 import StudentsPage from './pages/teacher/StudentsPage';
-import TestChatPage from './pages/teacher/TestChatPage';
 import TeachMePage from './pages/teacher/TeachMePage';
-import StudentCoursesPage from './pages/student/StudentCoursesPage';
 import CoursePage from './pages/student/CoursePage';
 
 function PrivateRoute({ children, role }) {
@@ -48,7 +46,7 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         <Route path="/parent/courses" element={
-          <PrivateRoute role="parent"><TeacherCoursesPage /></PrivateRoute>
+          <PrivateRoute role="parent"><CoursesPage /></PrivateRoute>
         } />
         <Route path="/parent/courses/:id" element={
           <PrivateRoute role="parent"><CourseEditorPage /></PrivateRoute>
@@ -57,7 +55,7 @@ export default function App() {
           <PrivateRoute role="parent"><DashboardPage /></PrivateRoute>
         } />
         <Route path="/parent/courses/:id/test-chat" element={
-          <PrivateRoute role="parent"><TestChatPage /></PrivateRoute>
+          <PrivateRoute role="parent"><CoursePage /></PrivateRoute>
         } />
         <Route path="/parent/courses/:id/teach" element={
           <PrivateRoute role="parent"><TeachMePage /></PrivateRoute>
@@ -67,9 +65,15 @@ export default function App() {
         } />
 
         <Route path="/child/courses" element={
-          <PrivateRoute role="child"><StudentCoursesPage /></PrivateRoute>
+          <PrivateRoute role="child"><CoursesPage /></PrivateRoute>
         } />
         <Route path="/child/courses/:id" element={
+          <PrivateRoute role="child"><CoursePage /></PrivateRoute>
+        } />
+        <Route path="/child/courses/:id/teach" element={
+          <PrivateRoute role="child"><TeachMePage /></PrivateRoute>
+        } />
+        <Route path="/child/courses/:id/test-chat" element={
           <PrivateRoute role="child"><CoursePage /></PrivateRoute>
         } />
 

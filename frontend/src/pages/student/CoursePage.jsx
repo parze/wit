@@ -1,16 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import api from '../../lib/api';
+import { getUser } from '../../lib/auth';
 import { getSocket } from '../../lib/socket';
 import useTTS from '../../lib/useTTS';
 
 export default function CoursePage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const user = getUser();
+  const isParent = user?.role === 'parent';
   const [course, setCourse] = useState(null);
-  const [mode, setMode] = useState('learn'); // 'learn' | 'forhör'
+  const [mode, setMode] = useState(searchParams.get('mode') === 'forhör' ? 'forhör' : 'learn');
 
   // Learn state
   const [goalAchievement, setGoalAchievement] = useState(null);
@@ -26,11 +30,14 @@ export default function CoursePage() {
   const [quizAnsweredSections, setQuizAnsweredSections] = useState([]);
   const [quizScore, setQuizScore] = useState(null);
   const quizIntroStartedRef = useRef(false);
+  const modeRef = useRef(mode);
+  const savedQRRef = useRef({ learn: [], 'forhör': [] });
 
   // Shared state
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState('');
   const messagesEndRef = useRef(null);
   const lastAssistantRef = useRef(null);
@@ -44,6 +51,22 @@ export default function CoursePage() {
     fetchCourse();
   }, [id]);
 
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+
+  // Restore saved QR after mode switch (with brief delay so cleared state renders first)
+  useEffect(() => {
+    if (loading || sending) return;
+    const saved = savedQRRef.current[mode];
+    console.log('[QR] mode switch to', mode, '| saved ref:', JSON.stringify(savedQRRef.current));
+    if (saved?.length) {
+      const t = setTimeout(() => {
+        console.log('[QR] restoring', mode, saved);
+        setQuickReplies(saved);
+      }, 150);
+      return () => clearTimeout(t);
+    }
+  }, [mode]);
+
   useEffect(() => {
     const socket = getSocket();
     socket.on('analysis_complete', ({ goalAchievement, summary, reasons, currentSection, completedSections, toc: newToc }) => {
@@ -51,8 +74,13 @@ export default function CoursePage() {
       setAiSummary({ goal_achievement: goalAchievement, summary, reasons, current_section: currentSection, completed_sections: completedSections });
       if (newToc?.length) setToc(newToc);
     });
-    socket.on('quick_replies', ({ quickReplies }) => {
-      setQuickReplies(quickReplies ?? []);
+    socket.on('quick_replies', ({ quickReplies, mode: replyMode }) => {
+      const m = replyMode || modeRef.current;
+      console.log('[QR] socket event | replyMode:', replyMode, '| currentMode:', modeRef.current, '| qr:', quickReplies);
+      savedQRRef.current[m] = quickReplies ?? [];
+      if (m === modeRef.current) {
+        setQuickReplies(quickReplies ?? []);
+      }
     });
     socket.on('quiz_progress', ({ quizScore: qs, quizAnsweredSections: qas, toc: newToc }) => {
       setQuizScore(qs);
@@ -118,20 +146,57 @@ export default function CoursePage() {
 
   const fetchCourse = async () => {
     try {
-      const { data } = await api.get(`/child/courses/${id}`);
+      let data;
+      if (isParent) {
+        const [courseRes, sessionRes, quizRes] = await Promise.all([
+          api.get(`/courses/${id}`),
+          api.get(`/courses/${id}/test-session`),
+          api.get(`/courses/${id}/quiz-session`),
+        ]);
+        data = {
+          ...courseRes.data,
+          messages: sessionRes.data.messages || [],
+          aiSummary: sessionRes.data.aiSummary || null,
+          quizMessages: quizRes.data.quizMessages || [],
+          quizAnsweredSections: quizRes.data.quizAnsweredSections || [],
+          quizScore: quizRes.data.quizScore ?? null,
+        };
+      } else {
+        data = (await api.get(`/child/courses/${id}`)).data;
+      }
+
       setCourse(data);
       setTtsOffered(data.enable_tts ?? false);
       setGoalAchievement(data.aiSummary?.goal_achievement ?? null);
       setAiSummary(data.aiSummary ?? null);
       if (data.compiled_toc?.length) setToc(data.compiled_toc);
-      setStars(data.stars ?? 0);
+      if (!isParent) setStars(data.stars ?? 0);
       setQuizMessages(data.quizMessages || []);
       setQuizAnsweredSections(data.quizAnsweredSections || []);
       setQuizScore(data.quizScore ?? null);
 
       const existing = data.messages || [];
       setMessages(existing);
-      if (existing.length === 0) {
+
+      // Restore persisted quick replies from last assistant message
+      const lastLearn = existing[existing.length - 1];
+      if (lastLearn?.role === 'assistant' && lastLearn.quickReplies?.length) {
+        savedQRRef.current.learn = lastLearn.quickReplies;
+        console.log('[QR] fetchCourse learn QR:', lastLearn.quickReplies);
+      }
+      const quizMsgs = data.quizMessages || [];
+      const lastQuiz = quizMsgs[quizMsgs.length - 1];
+      if (lastQuiz?.role === 'assistant' && lastQuiz.quickReplies?.length) {
+        savedQRRef.current['forhör'] = lastQuiz.quickReplies;
+        console.log('[QR] fetchCourse quiz QR:', lastQuiz.quickReplies);
+      }
+      // Set active QR based on current mode
+      const activeQR = mode === 'forhör'
+        ? savedQRRef.current['forhör']
+        : savedQRRef.current.learn;
+      if (activeQR?.length) setQuickReplies(activeQR);
+
+      if (existing.length === 0 && mode !== 'forhör') {
         setLoading(false);
         await streamMessage({ intro: true });
         return;
@@ -156,6 +221,31 @@ export default function CoursePage() {
       setError('Kunde inte spara avklarat arbetsområde');
     } finally {
       setCompleting(false);
+    }
+  };
+
+  const resetBoth = async () => {
+    setResetting(true);
+    resetTTS();
+    try {
+      await api.delete(`/courses/${id}/test-session`);
+      await api.delete(`/courses/${id}/quiz-session`).catch(() => {});
+      setMessages([]);
+      setQuickReplies([]);
+      savedQRRef.current = { learn: [], 'forhör': [] };
+      setGoalAchievement(null);
+      setAiSummary(null);
+      setQuizMessages([]);
+      setQuizAnsweredSections([]);
+      setQuizScore(null);
+      quizIntroStartedRef.current = false;
+      if (mode === 'forhör') {
+        await streamMessage({ mode: 'forhör', intro: true });
+      } else {
+        await streamMessage({ intro: true });
+      }
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -239,6 +329,7 @@ export default function CoursePage() {
     unlockAudio();
     const msg = input.trim();
     setInput('');
+    savedQRRef.current[mode] = [];
     if (mode === 'forhör') {
       setQuickReplies([]);
       setQuizMessages(m => [...m, { role: 'user', content: msg }]);
@@ -253,6 +344,7 @@ export default function CoursePage() {
   const sendQuickReply = async (reply) => {
     if (sending) return;
     unlockAudio();
+    savedQRRef.current[mode] = [];
     setQuickReplies([]);
     if (mode === 'forhör') {
       setQuizMessages(m => [...m, { role: 'user', content: reply }]);
@@ -280,25 +372,37 @@ export default function CoursePage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
         <div className="flex items-center gap-3 px-4 py-3.5">
-          <button onClick={() => navigate('/child/courses')} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors text-lg leading-none">←</button>
+          <button onClick={() => navigate(isParent ? '/parent/courses' : '/child/courses')} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors text-lg leading-none">←</button>
           <div className="flex-1 min-w-0">
             <h1 className="text-base font-bold text-gray-900 truncate">{course?.title}</h1>
-            {toc.length > 0 && (
-              <p className={`text-xs mt-0.5 ${mode === 'forhör' ? 'text-purple-500' : 'text-gray-400'}`}>
-                {mode === 'forhör'
-                  ? `${quizAnsweredSections.length} av ${toc.length} frågor`
-                  : `Moment ${aiSummary?.completed_sections?.length ?? 0} av ${toc.length}`}
-              </p>
-            )}
+            <div className="flex items-center gap-2 mt-0.5">
+
+              {toc.length > 0 && (
+                <span className={`text-xs ${mode === 'forhör' ? 'text-purple-500' : 'text-gray-400'}`}>
+                  {mode === 'forhör'
+                    ? `${quizAnsweredSections.length} av ${toc.length} frågor`
+                    : `Moment ${aiSummary?.completed_sections?.length ?? 0} av ${toc.length}`}
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            {stars > 0 && <span className="text-base">{'⭐'.repeat(stars)}</span>}
+            {!isParent && stars > 0 && <span className="text-base">{'⭐'.repeat(stars)}</span>}
             {ttsOffered && (
               <button
                 onClick={() => toggleTTS(!ttsEnabled)}
                 className={`text-xs px-2.5 py-1 rounded-full transition-colors ${ttsEnabled ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
               >
                 {ttsEnabled ? '🔊 På' : '🔇 Av'}
+              </button>
+            )}
+            {isParent && (
+              <button
+                onClick={resetBoth}
+                disabled={resetting || sending}
+                className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 transition-colors whitespace-nowrap"
+              >
+                {resetting ? 'Rensar...' : 'Rensa'}
               </button>
             )}
           </div>
@@ -315,27 +419,6 @@ export default function CoursePage() {
         <div className="bg-red-50 border-b border-red-200 text-red-700 px-4 py-2 text-sm">{error}</div>
       )}
 
-      {/* Mode toggle */}
-      <div className="bg-white border-b border-gray-100 px-4 py-2 flex items-center gap-2">
-        <button
-          onClick={() => setMode('learn')}
-          disabled={sending}
-          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-            mode === 'learn' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-          }`}
-        >
-          Lär mig
-        </button>
-        <button
-          onClick={() => setMode('forhör')}
-          disabled={sending}
-          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-            mode === 'forhör' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-          }`}
-        >
-          Förhör mig
-        </button>
-      </div>
 
       {/* Body: left panel + chat */}
       <div className="flex-1 flex min-h-0">
@@ -448,7 +531,7 @@ export default function CoursePage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {mode === 'learn' && goalAchievement >= 80 && (
+          {!isParent && mode === 'learn' && goalAchievement >= 80 && (
             <div className="border-t border-gray-200 bg-white px-4 py-2">
               <button
                 onClick={completeCourse}
