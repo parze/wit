@@ -1,0 +1,145 @@
+/* Lärmig tokens - built on Tele2 Sans foundation, but playful child-first brand */
+@font-face{font-family:"Tele2 Sans";src:url("fonts/Tele2Sans-Light.otf") format("opentype");font-weight:300;font-display:swap}
+@font-face{font-family:"Tele2 Sans";src:url("fonts/Tele2Sans-Regular.otf") format("opentype");font-weight:400;font-display:swap}
+@font-face{font-family:"Tele2 Sans";src:url("fonts/Tele2Sans-Medium.otf") format("opentype");font-weight:500;font-display:swap}
+@font-face{font-family:"Tele2 Serif";src:url("fonts/Tele2Serif-Regular.otf") format("opentype");font-weight:400;font-display:swap}
+@font-face{font-family:"Tele2 Serif";src:url("fonts/Tele2Serif-Bold.otf") format("opentype");font-weight:700;font-display:swap}
+
+:root{
+  --font-sans:"Tele2 Sans","Helvetica Neue",system-ui,sans-serif;
+  --font-serif:"Tele2 Serif",Georgia,serif;
+
+  /* Lärmig palette: warm paper, deep ink, playful accents */
+  --ink:#181410;
+  --ink-2:#3a332b;
+  --ink-3:#6a6055;
+  --ink-4:#a89f92;
+  --paper:#fbf7f0;
+  --paper-2:#f3ece0;
+  --paper-3:#ebe2d1;
+  --cream:#fff9ec;
+  --white:#ffffff;
+  --hairline:rgba(24,20,16,0.10);
+  --hairline-2:rgba(24,20,16,0.18);
+
+  /* Accent rainbow - used generously in child UI */
+  --sun:#ffc738;           /* stars, celebration */
+  --coral:#ff6b4a;         /* primary playful */
+  --berry:#e8356d;         /* forhör/quiz mode */
+  --grape:#7b3ff2;         /* lär mig mode */
+  --sky:#3d8fff;           /* info, links */
+  --ocean:#1548c9;         /* buttons */
+  --mint:#2fc28a;          /* success */
+  --lime:#b9e24a;          /* confirm */
+
+  --shadow-1:0 1px 2px rgba(24,20,16,0.04),0 2px 6px rgba(24,20,16,0.06);
+  --shadow-2:0 4px 12px rgba(24,20,16,0.08),0 10px 28px rgba(24,20,16,0.06);
+  --shadow-3:0 20px 50px rgba(24,20,16,0.14);
+
+  --r-sm:10px;
+  --r-md:16px;
+  --r-lg:24px;
+  --r-xl:32px;
+  --r-pill:999px;
+}
+
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{margin:0;font-family:var(--font-sans);color:var(--ink);background:var(--paper)}
+
+/* ---------- Core primitives (use inside device frames) ---------- */
+.lm-screen{width:100%;height:100%;display:flex;flex-direction:column;background:var(--paper);color:var(--ink);font-family:var(--font-sans);overflow:hidden}
+.lm-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.lm-scroll::-webkit-scrollbar{display:none}
+
+/* App top bar inside frame */
+.lm-topbar{display:flex;align-items:center;gap:12px;padding:10px 20px 8px;background:var(--paper);position:relative;z-index:2}
+.lm-topbar-dark{background:var(--ink);color:var(--white)}
+.lm-topbar .lm-back{width:40px;height:40px;border-radius:999px;background:var(--white);border:1px solid var(--hairline);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.lm-topbar-dark .lm-back{background:rgba(255,255,255,0.1);border-color:rgba(255,255,255,0.18);color:var(--white)}
+.lm-topbar .lm-title{flex:1;font-weight:500;font-size:17px;letter-spacing:-0.01em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lm-topbar .lm-sub{font-size:12px;color:var(--ink-3);letter-spacing:0.04em;text-transform:uppercase;font-weight:500}
+
+/* Wordmark */
+.lm-wordmark{font-family:var(--font-serif);font-weight:700;letter-spacing:-0.03em;font-size:28px;line-height:1;display:inline-flex;align-items:baseline;gap:2px}
+.lm-wordmark .dot{width:10px;height:10px;border-radius:999px;background:var(--coral);display:inline-block;margin-left:2px;transform:translateY(-2px)}
+
+/* Buttons */
+.lm-btn{font-family:var(--font-sans);font-weight:500;font-size:16px;line-height:1;border-radius:var(--r-pill);border:0;cursor:pointer;padding:16px 22px;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:transform 120ms cubic-bezier(0.2,0,0,1),background 220ms,box-shadow 220ms}
+.lm-btn:active{transform:scale(0.98)}
+.lm-btn-primary{background:var(--ink);color:var(--white)}
+.lm-btn-primary:hover{background:var(--ink-2)}
+.lm-btn-accent{background:var(--sun);color:var(--ink)}
+.lm-btn-coral{background:var(--coral);color:var(--white)}
+.lm-btn-ghost{background:transparent;color:var(--ink);border:1.5px solid var(--hairline-2)}
+.lm-btn-white{background:var(--white);color:var(--ink);border:1px solid var(--hairline)}
+.lm-btn-block{width:100%}
+.lm-btn-sm{padding:10px 16px;font-size:14px}
+.lm-btn-xl{padding:20px 28px;font-size:17px}
+
+/* Inputs */
+.lm-label{display:block;font-size:13px;color:var(--ink-2);font-weight:500;margin-bottom:6px}
+.lm-input{width:100%;font-family:var(--font-sans);font-size:16px;padding:14px 16px;border-radius:var(--r-md);border:1.5px solid var(--hairline);background:var(--white);color:var(--ink);transition:border-color 120ms}
+.lm-input:focus{outline:none;border-color:var(--ink)}
+.lm-input-pill{border-radius:var(--r-pill)}
+
+/* Chips / tags */
+.lm-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:500;letter-spacing:0.04em;text-transform:uppercase;line-height:1;border:1px solid transparent}
+.lm-chip-ink{background:var(--ink);color:var(--white)}
+.lm-chip-paper{background:var(--paper-2);color:var(--ink-2)}
+.lm-chip-sun{background:var(--sun);color:var(--ink)}
+.lm-chip-grape{background:var(--grape);color:var(--white)}
+.lm-chip-berry{background:var(--berry);color:var(--white)}
+.lm-chip-mint{background:var(--mint);color:var(--white)}
+.lm-chip-outline{background:transparent;border-color:var(--hairline-2);color:var(--ink-2)}
+
+/* Card */
+.lm-card{background:var(--white);border-radius:var(--r-lg);border:1px solid var(--hairline);padding:18px}
+
+/* Progress */
+.lm-progress{height:10px;background:var(--paper-3);border-radius:999px;overflow:hidden;position:relative}
+.lm-progress>span{display:block;height:100%;background:var(--ink);border-radius:999px}
+.lm-progress.sun>span{background:linear-gradient(90deg,var(--sun),var(--coral))}
+.lm-progress.grape>span{background:linear-gradient(90deg,var(--grape),var(--berry))}
+.lm-progress.mint>span{background:var(--mint)}
+
+/* Stars */
+.lm-stars{display:inline-flex;gap:3px;align-items:center}
+
+/* Headings */
+.lm-h1{font-family:var(--font-sans);font-weight:500;font-size:28px;line-height:1.1;letter-spacing:-0.02em;margin:0}
+.lm-h2{font-family:var(--font-sans);font-weight:500;font-size:22px;line-height:1.15;letter-spacing:-0.015em;margin:0}
+.lm-h3{font-family:var(--font-sans);font-weight:500;font-size:17px;line-height:1.2;margin:0}
+.lm-display{font-family:var(--font-serif);font-weight:700;font-size:40px;line-height:1.0;letter-spacing:-0.03em;margin:0}
+.lm-eyebrow{font-size:11px;letter-spacing:0.1em;text-transform:uppercase;font-weight:500;color:var(--ink-3)}
+.lm-meta{font-size:13px;color:var(--ink-3);line-height:1.4}
+
+/* Tab bar (mobile nav bottom) */
+.lm-tabbar{display:flex;background:var(--white);border-top:1px solid var(--hairline);padding:8px 8px 14px;gap:4px}
+.lm-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px;border-radius:14px;color:var(--ink-3);font-size:11px;font-weight:500;cursor:pointer;background:transparent;border:0;font-family:inherit}
+.lm-tab.is-active{color:var(--ink)}
+.lm-tab.is-active .lm-tab-dot{background:var(--coral)}
+.lm-tab-dot{width:6px;height:6px;border-radius:999px;background:transparent;margin-top:2px}
+
+/* Celebration burst */
+.lm-burst{position:relative;display:inline-flex;align-items:center;justify-content:center}
+.lm-burst::before{content:"";position:absolute;inset:-8px;background:radial-gradient(circle,var(--sun) 0%,transparent 60%);opacity:0.35;z-index:-1;border-radius:999px}
+
+/* Utility */
+.lm-row{display:flex;align-items:center;gap:10px}
+.lm-col{display:flex;flex-direction:column}
+.lm-gap-2{gap:8px}.lm-gap-3{gap:12px}.lm-gap-4{gap:16px}.lm-gap-5{gap:20px}
+.lm-px-5{padding-left:20px;padding-right:20px}
+.lm-py-4{padding-top:16px;padding-bottom:16px}
+
+/* Chat bubbles */
+.lm-bubble{max-width:82%;padding:14px 16px;border-radius:22px;font-size:15px;line-height:1.45}
+.lm-bubble-ai{background:var(--white);border:1px solid var(--hairline);border-bottom-left-radius:8px;color:var(--ink)}
+.lm-bubble-me{background:var(--ink);color:var(--white);border-bottom-right-radius:8px;align-self:flex-end}
+.lm-bubble-me.grape{background:var(--grape)}
+.lm-bubble-me.berry{background:var(--berry)}
+.lm-quickreply{display:inline-flex;padding:10px 14px;border-radius:999px;background:var(--white);border:1.5px solid var(--hairline-2);font-size:14px;font-weight:500;color:var(--ink);cursor:pointer;line-height:1}
+.lm-quickreply:hover{border-color:var(--ink)}
+
+/* Rainbow dot for Lärmig brand */
+.lm-dots{display:inline-flex;gap:3px}
+.lm-dots i{width:7px;height:7px;border-radius:999px;display:block}

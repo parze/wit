@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lärmig · Roligare läxläsning</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="stylesheet" href="larmig.css" />
+<style>
+  html, body { height: 100%; margin: 0; background: #efe9dd; overflow: hidden; }
+  .tweaks-panel{position:fixed;right:16px;bottom:16px;z-index:2000;background:#fff;border:1px solid rgba(0,0,0,0.1);border-radius:18px;padding:14px 16px;box-shadow:0 20px 50px rgba(0,0,0,0.18);font-family:"Tele2 Sans",sans-serif;min-width:240px;display:none}
+  .tweaks-panel.open{display:block}
+  .tweaks-panel h4{margin:0 0 8px;font-size:13px;letter-spacing:0.06em;text-transform:uppercase;color:#6a6055;font-weight:500}
+  .tweaks-row{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+  .tweak-sw{width:28px;height:28px;border-radius:999px;border:2px solid transparent;cursor:pointer}
+  .tweak-sw.active{border-color:#181410}
+  .tweak-btn{padding:6px 10px;border-radius:999px;border:1px solid rgba(0,0,0,0.1);background:#fff;font-size:12px;cursor:pointer;font-family:inherit;color:#181410}
+  .tweak-btn.active{background:#181410;color:#fff;border-color:#181410}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- React -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- Canvas + device -->
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+
+<!-- Primitives + screens -->
+<script type="text/babel" src="components/primitives.jsx"></script>
+<script type="text/babel" src="components/screens-auth.jsx"></script>
+<script type="text/babel" src="components/screens-home.jsx"></script>
+<script type="text/babel" src="components/screens-parent.jsx"></script>
+<script type="text/babel" src="components/screens-teach.jsx"></script>
+<script type="text/babel" src="components/screens-chat.jsx"></script>
+<script type="text/babel" src="components/screens-signup-flows.jsx"></script>
+<script type="text/babel" src="components/screens-create-course.jsx"></script>
+<script type="text/babel" src="components/flow-map.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+
+const TWEAKS = /*EDITMODE-BEGIN*/{
+  "accent": "coral",
+  "density": "cozy",
+  "darkChat": false
+}/*EDITMODE-END*/;
+
+const ACCENTS = {
+  coral:  { primary: '#ff6b4a', secondary: '#ffc738', name: 'Coral + Sun' },
+  grape:  { primary: '#7b3ff2', secondary: '#e8356d', name: 'Grape + Berry' },
+  mint:   { primary: '#2fc28a', secondary: '#b9e24a', name: 'Mint + Lime' },
+  ocean:  { primary: '#1548c9', secondary: '#3d8fff', name: 'Ocean + Sky' },
+};
+
+function applyTweaks(t){
+  const a = ACCENTS[t.accent] || ACCENTS.coral;
+  document.documentElement.style.setProperty('--coral', a.primary);
+  document.documentElement.style.setProperty('--sun', a.secondary);
+  document.body.style.background = t.darkChat ? '#1a1714' : '#efe9dd';
+}
+
+function Phone({ children, w = 390, h = 780 }){
+  return (
+    <div style={{
+      width: w, height: h, borderRadius: 46, background: '#111',
+      padding: 8, boxShadow: '0 30px 60px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.1)',
+      position: 'relative',
+    }}>
+      <div style={{ position: 'absolute', top: 18, left: '50%', transform: 'translateX(-50%)', width: 110, height: 30, borderRadius: 20, background: '#000', zIndex: 10 }} />
+      <div style={{
+        width: '100%', height: '100%', borderRadius: 40, overflow: 'hidden',
+        background: '#fff', position: 'relative',
+      }}>
+        {/* status bar */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 50, display: 'flex', justifyContent: 'space-between', padding: '18px 28px 0', fontFamily: '-apple-system,system-ui', fontSize: 14, fontWeight: 600, zIndex: 20, pointerEvents: 'none' }}>
+          <span>9:41</span>
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="2.4" height="4" rx="0.5" fill="#000"/><rect x="3.6" y="4" width="2.4" height="6" rx="0.5" fill="#000"/><rect x="7.2" y="2" width="2.4" height="8" rx="0.5" fill="#000"/><rect x="10.8" y="0" width="2.4" height="10" rx="0.5" fill="#000"/></svg>
+            <svg width="22" height="11" viewBox="0 0 22 11"><rect x="0.5" y="0.5" width="19" height="10" rx="3" stroke="#000" strokeOpacity="0.4" fill="none"/><rect x="2" y="2" width="16" height="7" rx="1.5" fill="#000"/></svg>
+          </span>
+        </div>
+        {/* home indicator */}
+        <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', width: 130, height: 4, borderRadius: 999, background: 'rgba(0,0,0,0.3)', zIndex: 20, pointerEvents: 'none' }} />
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function TweakPanel({ tweaks, setTweaks, onHide }){
+  const push = (patch) => {
+    const next = { ...tweaks, ...patch };
+    setTweaks(next);
+    applyTweaks(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: patch }, '*');
+  };
+  return (
+    <div className="tweaks-panel open">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <strong style={{ fontSize: 14 }}>Tweaks</strong>
+        <button onClick={onHide} style={{ background: 'transparent', border: 0, color: '#888', cursor: 'pointer' }}>✕</button>
+      </div>
+      <h4>Accentpar</h4>
+      <div className="tweaks-row">
+        {Object.entries(ACCENTS).map(([k, v]) => (
+          <button key={k} className={`tweak-sw ${tweaks.accent === k ? 'active' : ''}`}
+            title={v.name}
+            style={{ background: `linear-gradient(135deg,${v.primary},${v.secondary})` }}
+            onClick={() => push({ accent: k })} />
+        ))}
+      </div>
+      <h4>Täthet</h4>
+      <div className="tweaks-row">
+        {['cozy','compact'].map(d => (
+          <button key={d} className={`tweak-btn ${tweaks.density === d ? 'active' : ''}`} onClick={() => push({ density: d })}>{d === 'cozy' ? 'Luftig' : 'Kompakt'}</button>
+        ))}
+      </div>
+      <h4>Chat</h4>
+      <div className="tweaks-row">
+        <button className={`tweak-btn ${!tweaks.darkChat ? 'active' : ''}`} onClick={() => push({ darkChat: false })}>Ljus</button>
+        <button className={`tweak-btn ${tweaks.darkChat ? 'active' : ''}`} onClick={() => push({ darkChat: true })}>Mörk bakgrund</button>
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const [tweaks, setTweaks] = useState(TWEAKS);
+  const [tweakOpen, setTweakOpen] = useState(false);
+  useEffect(() => { applyTweaks(tweaks); }, []);
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === '__activate_edit_mode') setTweakOpen(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweakOpen(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  return (
+    <>
+      <DesignCanvas title="Lärmig — Hi-fi redesign" bg="#efe9dd">
+        <DCSection id="flow" title="Flödeskarta">
+          <DCArtboard id="flow-map" label="Hur skärmarna hänger ihop" width={1640} height={1500}>
+            <FlowMap />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="child" title="Barnet — kärnan i produkten">
+          <DCArtboard id="child-home" label="Mina kurser — barn" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenChildCourses /></Phone>
+          </DCArtboard>
+          <DCArtboard id="chat-learn" label="Lär mig (chatt, gamified)" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenChat mode="learn" /></Phone>
+          </DCArtboard>
+          <DCArtboard id="chat-quiz" label="Förhör mig (quiz)" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenChat mode="forhör" /></Phone>
+          </DCArtboard>
+          <DCArtboard id="teach" label="Läs o lär (TTS)" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenTeachMe /></Phone>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="auth" title="Onboarding">
+          <DCArtboard id="login" label="Logga in — förälder" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenLogin initialTab="parent" /></Phone>
+          </DCArtboard>
+          <DCArtboard id="login-child" label="Logga in — barn (pinkod)" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenLogin initialTab="child" /></Phone>
+          </DCArtboard>
+          <DCArtboard id="child-signup" label="Barn skapar konto (från kompis-QR)" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenChildSignup /></Phone>
+          </DCArtboard>
+          <DCArtboard id="register" label="Skapa föräldrakonto" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenRegister /></Phone>
+          </DCArtboard>
+          <DCArtboard id="forgot" label="Glömt lösenord — skicka länk" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenForgotPassword state="request" /></Phone>
+          </DCArtboard>
+          <DCArtboard id="forgot-sent" label="Glömt lösenord — mejl skickat" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenForgotPassword state="sent" /></Phone>
+          </DCArtboard>
+          <DCArtboard id="child-paywall" label="Barn nått gräns — Be förälder" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenChildHomePaywall /></Phone>
+          </DCArtboard>
+          <DCArtboard id="parent-upgrade" label="Förälder tar över (huvudkonto)" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenParentUpgrade /></Phone>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="parent" title="Föräldern — nedtonad men tydlig">
+          <DCArtboard id="parent-home" label="Mina kurser — förälder" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenParentCourses /></Phone>
+          </DCArtboard>
+          <DCArtboard id="children" label="Hantera barn" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenChildren /></Phone>
+          </DCArtboard>
+          <DCArtboard id="share" label="Dela kurs (QR)" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenShare /></Phone>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="create-parent" title="Skapa kurs — förälder">
+          <DCArtboard id="create-p1-upload" label="1. Ladda upp läromedel" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenCreateCourseUpload role="parent" /></Phone>
+          </DCArtboard>
+          <DCArtboard id="create-p2-prepare" label="2. Förbereder" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenCreateCoursePreparing role="parent" /></Phone>
+          </DCArtboard>
+          <DCArtboard id="create-p3-name" label="3. Namnge + välj barn" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenCreateCourseName role="parent" /></Phone>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="create-child" title="Skapa kurs — barn (bara jag ser den)">
+          <DCArtboard id="create-c1-upload" label="1. Ladda upp" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenCreateCourseUpload role="child" /></Phone>
+          </DCArtboard>
+          <DCArtboard id="create-c2-prepare" label="2. Förbereder" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenCreateCoursePreparing role="child" /></Phone>
+          </DCArtboard>
+          <DCArtboard id="create-c3-name" label="3. Namnge (privat)" width={406} height={798}>
+            <Phone w={406} h={798}><ScreenCreateCourseName role="child" /></Phone>
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+      {tweakOpen && <TweakPanel tweaks={tweaks} setTweaks={setTweaks} onHide={() => setTweakOpen(false)} />}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
